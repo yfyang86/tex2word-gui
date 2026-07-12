@@ -4,6 +4,19 @@ A web workspace for converting **LaTeX → Microsoft Word (`.docx`)** with the
 [`tex2word`](https://pypi.org/project/tex2word/) engine. tex2word is the
 essential module; the web app is a thin adapter around its IR and outputs.
 
+
+| Image | Description |
+|:------|:------------|
+| [![01-login](./assets/01-login.png)](./assets/01-login.png) | Project login page |
+| [![02-project](./assets/02-project.png)](./assets/02-project.png) | Project overview/dashboard |
+| [![03-import-arXiv](./assets/03-import-arXiv.png)](./assets/03-import-arXiv.png) | Import from arXiv interface |
+| [![04-import-markdown](./assets/04-import-markdown.png)](./assets/04-import-markdown.png) | Import markdown files interface |
+| [![05-main](./assets/05-main.png)](./assets/05-main.png) | Main application interface, sync location for single file |
+| [![06-main-structure](./assets/06-main-structure.png)](./assets/06-main-structure.png) | Main document structure/organization view |
+| [![07-convert-log](./assets/07-convert-log.png)](./assets/07-convert-log.png) | tex2word convert log interface |
+| [![08-chat-memory](./assets/08-chat-memory.png)](./assets/08-chat-memory.png) | Chat memory/conversation history |
+
+
 ## Features
 
 - **Convert** LaTeX (single file or multi-file project) to a real `.docx`, with a
