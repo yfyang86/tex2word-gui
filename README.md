@@ -57,10 +57,7 @@ essential module; the web app is a thin adapter around its IR and outputs.
 - **Hardened** — per-IP **rate limiting** (tighter on login / convert / LLM) and
   a request **body-size cap**, both configurable in `[security]`.
 
-The UI follows the **Enthumelon** design system from
-[`front-prototype/`](front-prototype). Architecture and internals are documented
-in [`DEVELOPER-MANUAL.md`](DEVELOPER-MANUAL.md); planning lives in
-[`Sprint/`](Sprint).
+The UI follows the **Enthumelon** design system.
 
 ## Requirements
 
