@@ -1,0 +1,32 @@
+name: Feature request
+description: Propose a new capability or a sprint
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Features are planned through the sprint harness — see
+        [`Sprint/`](../blob/dev/Sprint/README.md) and
+        [CONTRIBUTING.md](../blob/dev/CONTRIBUTING.md). Check the roadmap and
+        backlog first; this may already be scoped.
+  - type: textarea
+    id: gap
+    attributes:
+      label: The gap
+      description: What can't you do today, and why does it matter?
+    validations:
+      required: true
+  - type: textarea
+    id: approach
+    attributes:
+      label: Proposed approach
+      description: Sketch of the change. Note whether it touches the `tex2word` engine (should be the adapter) or the web app.
+    validations:
+      required: false
+  - type: textarea
+    id: testing
+    attributes:
+      label: How it would be tested
+      description: What tests would lock the behaviour in?
+    validations:
+      required: false

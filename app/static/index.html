@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tex Word Studio</title>
+  <link rel="stylesheet" href="/static/tokens.css">
+  <link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+  <!-- ── Top bar ── -->
+  <header class="topbar">
+    <div class="brand-mark">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 12h12M11 6l6 6-6 6" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+    </div>
+    <span class="brand-name">Enthumelon</span>
+    <div style="width:1px;height:18px;background:var(--border)"></div>
+    <nav class="crumb" id="crumb">
+      <span class="crumb-link" id="crumb-home">Documents</span>
+    </nav>
+    <div class="spacer"></div>
+    <span class="session-chip" id="session-chip" hidden>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="8" r="4" stroke="currentColor" stroke-width="2"/><path d="M4 21v-1a6 6 0 0 1 6-6h4a6 6 0 0 1 6 6v1" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <span id="session-user"></span>
+      <button class="icon-btn" id="btn-logout" title="Sign out">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </span>
+    <span class="version-chip" id="version-chip">tex2word …</span>
+    <button class="icon-btn" id="btn-about" title="About Tex Word Studio">
+      <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 11v5M12 8h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+    </button>
+  </header>
+
+  <!-- ── login overlay (only when [auth] is enabled) ── -->
+  <div id="login-overlay" class="login-overlay" hidden>
+    <form id="login-form" class="login-card" autocomplete="on">
+      <div class="brand-mark" style="width:34px;height:34px;border-radius:9px">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none"><path d="M4 12h12M11 6l6 6-6 6" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <h2>Sign in</h2>
+      <p class="login-sub">Tex Word Studio requires an account.</p>
+      <input type="text" id="login-user" placeholder="Username" autocomplete="username" autocapitalize="off" spellcheck="false">
+      <input type="password" id="login-pass" placeholder="Password" autocomplete="current-password">
+      <div class="banner error" id="login-error" hidden></div>
+      <button type="submit" class="btn-primary" style="width:100%;justify-content:center">Sign in</button>
+    </form>
+  </div>
+
+  <!-- ════ PROJECTS SCREEN ════ -->
+  <main id="view-projects" class="screen">
+    <div class="page">
+      <div class="page-head">
+        <div>
+          <div class="eyebrow">Workspace</div>
+          <h1 class="page-title">Documents</h1>
+          <p class="page-sub">Convert TeX projects into editable Word — preview, polish and export.</p>
+        </div>
+        <div class="page-actions">
+          <button class="btn-secondary" id="btn-coverage">Coverage</button>
+          <button class="btn-secondary" id="btn-upload">Upload .zip/.tar</button>
+          <input type="file" id="archive-input" accept=".zip,.tar,.gz,.tgz,.tbz2,.bz2" hidden>
+          <button class="btn-secondary" id="btn-import-md">Import Markdown</button>
+          <button class="btn-secondary" id="btn-import-arxiv">Import arXiv</button>
+          <button class="btn-primary" id="btn-new">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><line x1="12" y1="5" x2="12" y2="19" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>
+            New project
+          </button>
+        </div>
+      </div>
+      <div class="gallery-bar">
+        <div class="search-box">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="11" cy="11" r="8" stroke="var(--text-4)" stroke-width="2"/><path d="M21 21l-4.35-4.35" stroke="var(--text-4)" stroke-width="2" stroke-linecap="round"/></svg>
+          <input type="text" id="gallery-search" placeholder="Search projects…" autocomplete="off">
+        </div>
+        <div class="filter-chips" id="filter-chips">
+          <button class="chip active" data-filter="all">All</button>
+          <button class="chip" data-filter="tex">TeX</button>
+          <button class="chip" data-filter="arxiv">arXiv</button>
+          <button class="chip" data-filter="markdown">Markdown</button>
+          <button class="chip" data-filter="favourite">★ Favourites</button>
+          <button class="chip" data-filter="archived">Archived</button>
+        </div>
+      </div>
+      <div id="project-grid" class="project-grid"></div>
+    </div>
+  </main>
+
+  <!-- ════ COVERAGE SCREEN ════ -->
+  <main id="view-coverage" class="screen" hidden>
+    <div class="page">
+      <div class="page-head">
+        <div>
+          <div class="eyebrow">Engine metrics</div>
+          <h1 class="page-title">Coverage</h1>
+          <p class="page-sub">tex2word conversion metrics across all projects.</p>
+        </div>
+        <div class="page-actions">
+          <a class="btn-secondary" id="cov-engine" href="/api/coverage.html" target="_blank" rel="noopener">Engine report ↗</a>
+          <button class="btn-secondary" id="cov-back">Back</button>
+        </div>
+      </div>
+      <div id="cov-aggregate" class="cov-cards"></div>
+      <div id="cov-table"></div>
+    </div>
+  </main>
+
+  <!-- ════ WORKSPACE SCREEN ════ -->
+  <main id="view-workspace" class="screen workspace" hidden>
+    <!-- file tree -->
+    <aside class="pane files">
+      <div class="pane-head">
+        <span class="eyebrow">Files</span>
+        <div class="spacer"></div>
+        <button class="icon-btn" id="btn-upload-asset" title="Upload image">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/><circle cx="8.5" cy="8.5" r="1.5" stroke="currentColor" stroke-width="2"/><polyline points="21 15 16 10 5 21" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+        </button>
+        <input type="file" id="asset-input" accept="image/*,.pdf,.eps" hidden>
+        <button class="icon-btn" id="btn-add-file" title="Add file">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div id="file-list" class="file-list"></div>
+    </aside>
+
+    <!-- editor -->
+    <section class="pane editor">
+      <div class="pane-head">
+        <span class="pane-title sub" id="editor-tab">—</span>
+        <span class="dirty-dot" id="dirty-dot" hidden title="unsaved changes"></span>
+        <div class="spacer"></div>
+        <button class="btn-secondary" id="btn-import-tex" hidden title="Convert this Markdown file to a new .tex file">Import to TeX</button>
+        <button class="btn-secondary" id="btn-save">Save</button>
+        <button class="btn-secondary" id="btn-toggle-preview">Show preview</button>
+      </div>
+      <div class="split" id="split">
+        <div class="split-pane" id="source-pane">
+          <div class="code-wrap" id="code-wrap">
+            <pre class="code-hl" id="highlight" aria-hidden="true"></pre>
+            <textarea id="source" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="file source"></textarea>
+          </div>
+          <div class="asset-view" id="asset-view" hidden></div>
+        </div>
+        <div class="split-divider" id="split-divider" hidden title="Drag to resize"></div>
+        <div class="split-pane preview-pane" id="preview-pane" hidden>
+          <div class="preview-head">
+            <span class="eyebrow">Preview</span>
+            <span class="preview-stale" id="preview-stale" hidden>stale</span>
+            <div class="spacer"></div>
+            <button class="icon-btn" id="btn-refresh-preview" title="Refresh preview">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M23 4v6h-6M1 20v-6h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+          <div id="preview-doc" class="preview-doc"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- conversion / structure -->
+    <aside class="pane report">
+      <div class="pane-head">
+        <div class="tabs">
+          <button class="tab active" data-rtab="report">Report</button>
+          <button class="tab" data-rtab="structure">Structure</button>
+          <button class="tab" data-rtab="assistant">Assistant</button>
+        </div>
+      </div>
+      <div class="report-body">
+        <!-- Report tab -->
+        <div id="tab-report">
+          <div class="options">
+            <label><input type="checkbox" id="opt-section"> number by section</label>
+            <label>columns <input type="number" id="opt-columns" min="1" max="4" value="1"></label>
+            <label>lang <input type="text" id="opt-lang" placeholder="en-US"></label>
+            <label>citations
+              <select id="opt-citation">
+                <option value="static">static</option>
+                <option value="zotero">zotero</option>
+              </select>
+            </label>
+            <label id="opt-csl-wrap" hidden>CSL
+              <select id="opt-csl"><option value="">none</option></select>
+            </label>
+            <label><input type="checkbox" id="opt-mathimg"> math→image fallback</label>
+            <label id="opt-refdoc-wrap" hidden>template
+              <select id="opt-refdoc"><option value="">none</option></select>
+            </label>
+            <button class="btn-secondary" id="btn-save-settings" title="Save these as the project's default settings" style="padding:4px 9px;font-size:11.5px">Save settings</button>
+          </div>
+          <button class="btn-primary" id="btn-convert" style="width:100%">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 12h12M11 6l6 6-6 6" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            Convert project
+          </button>
+          <div id="error-slot"></div>
+          <div id="result-slot">
+            <div class="placeholder">Convert the project to see the report and download the&nbsp;.docx.</div>
+          </div>
+        </div>
+        <!-- Structure tab -->
+        <div id="tab-structure" hidden>
+          <div id="structure-slot">
+            <div class="placeholder">Open the <b>Preview</b> tab to build the document outline.</div>
+          </div>
+        </div>
+        <!-- Assistant tab -->
+        <div id="tab-assistant" hidden>
+          <div class="assistant-bar">
+            <div class="assistant-meta" id="assistant-meta">tex-copilot</div>
+            <select id="assistant-provider" class="provider-picker" title="Provider / model" hidden></select>
+            <button class="icon-btn" id="btn-memory" title="Project memory">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 2a5 5 0 0 0-5 5v1a4 4 0 0 0 0 8 4 4 0 0 0 8 0 4 4 0 0 0 0-8V7a5 5 0 0 0-3-5zM12 2v20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+            <button class="icon-btn" id="btn-new-chat" title="New chat">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            </button>
+          </div>
+          <div id="assistant-slot">
+            <div class="placeholder">Ask tex-copilot to <b>Fix</b>, <b>Polish</b>, or <b>Explain</b> the current file.</div>
+          </div>
+          <div class="composer">
+            <div class="assistant-actions">
+              <button class="btn-secondary" data-act="fix" title="Fix conversion warnings using the last report">Fix</button>
+              <button class="btn-secondary" data-act="polish">Polish</button>
+              <button class="btn-secondary" data-act="explain">Explain</button>
+            </div>
+            <div class="ask-row">
+              <div class="ask-field">
+                <textarea id="ask-input" rows="1" placeholder="Ask — @file for context, / for commands. Shift+Enter to send" autocomplete="off" spellcheck="false"></textarea>
+                <div id="ac-menu" class="ac-menu" hidden></div>
+              </div>
+              <button class="btn-primary" id="ask-send">Ask</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </aside>
+  </main>
+
+  <!-- ── import-markdown modal ── -->
+  <div id="import-modal" class="modal" hidden>
+    <div class="modal-card wide">
+      <h3>Import Markdown</h3>
+      <input type="text" id="import-name" placeholder="Project name" autocomplete="off">
+      <textarea id="import-md" placeholder="Paste Markdown here…" spellcheck="false"></textarea>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="import-cancel">Cancel</button>
+        <button class="btn-primary" id="import-ok">Import</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── project-memory modal ── -->
+  <div id="memory-modal" class="modal" hidden>
+    <div class="modal-card wide">
+      <h3>Project memory</h3>
+      <p class="login-sub">Durable facts the assistant should always know about this document — injected into every chat.</p>
+      <textarea id="memory-text" placeholder="e.g. Uses biblatex; target journal = IEEE; prefer \citet over \cite…" spellcheck="false"></textarea>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="memory-cancel">Cancel</button>
+        <button class="btn-primary" id="memory-save">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── about modal ── -->
+  <div id="about-modal" class="modal" hidden>
+    <div class="modal-card about-card">
+      <div class="brand-mark" style="width:34px;height:34px;border-radius:9px">
+        <svg width="19" height="19" viewBox="0 0 24 24" fill="none"><path d="M4 12h12M11 6l6 6-6 6" stroke="#fff" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </div>
+      <h3>Tex Word Studio</h3>
+      <p class="about-version" id="about-version">version …</p>
+      <p class="login-sub">A web workspace that converts LaTeX to Microsoft Word with the
+        <code>tex2word</code> engine — preview, round-trip, and an AI assistant.</p>
+      <dl class="about-meta">
+        <div><dt>App</dt><dd id="about-app">…</dd></div>
+        <div><dt>Engine</dt><dd id="about-engine">…</dd></div>
+        <div><dt>License</dt><dd>Apache-2.0</dd></div>
+      </dl>
+      <div class="modal-actions">
+        <a class="btn-secondary" id="about-repo" href="https://github.com/yfyang86/tex2word-web" target="_blank" rel="noopener">Repository</a>
+        <button class="btn-primary" id="about-close">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── simple modal ── -->
+  <div id="modal" class="modal" hidden>
+    <div class="modal-card">
+      <h3 id="modal-title">Title</h3>
+      <input type="text" id="modal-input" autocomplete="off">
+      <div class="modal-actions">
+        <button class="btn-secondary" id="modal-cancel">Cancel</button>
+        <button class="btn-primary" id="modal-ok">OK</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,47 @@
+name: Bug report
+description: A conversion, preview, or app bug
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. For LaTeX/Word fidelity issues, a **minimal
+        reproducing snippet** is the single most useful thing you can include.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened
+      description: What did you do, what did you expect, and what did you get instead?
+      placeholder: |
+        Input (LaTeX/Markdown):
+        …
+        Expected:
+        …
+        Actual:
+        …
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Minimal reproduction
+      description: The smallest input that triggers it, plus the steps to reproduce.
+    validations:
+      required: false
+  - type: input
+    id: versions
+    attributes:
+      label: Environment
+      description: OS, Python version, and tex2word / tex2word-web versions.
+      placeholder: "macOS 14, Python 3.12.3, tex2word 1.0.1"
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before filing
+      options:
+        - label: I searched existing issues and this isn't a duplicate.
+          required: true
+        - label: I confirmed the same input also fails (or works) in the `tex2word` engine itself, where relevant.
+          required: false

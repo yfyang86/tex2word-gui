@@ -1,0 +1,108 @@
+# Tex Word Studio — configuration sample.
+#
+# Copy to `config.toml` and fill in real values; `config.toml` is gitignored so
+# your API keys never get committed. The app loads `config.toml` if present and
+# falls back to this sample otherwise (see app/config.py).
+#
+# Secrets: each provider takes EITHER an inline `api_key` OR `api_key_env`
+# (the name of an environment variable to read the key from — preferred).
+
+[default]
+# Which provider the tex-copilot assistant uses by default (Sprint 04+).
+# Must match one of the [providers.*] table names below.
+provider = "deepseek"
+
+# --- Backend service (the FastAPI app: API + SPA) ----------------------------
+[backend]
+host = "0.0.0.0"
+port = 8000
+metasqlite_db = "tex2word.db"   # reserved for Sprint 02 persistence
+redis_port = 6379               # reserved for async conversion queue
+redis_table = "0"
+
+# --- Authentication (optional, Sprint 12) ------------------------------------
+# Account-based auth with scrypt-hashed passwords and RSA-signed (RS256) JWT
+# sessions. Disabled by default — the app stays open. To turn it on:
+#   1. uv run python manage.py init-keys           # writes the RSA keypair
+#   2. uv run python manage.py create-admin --username you
+#   3. set enabled = true below and restart
+[auth]
+enabled = false
+private_key_path = "auth_private.pem"   # RSA private signing key (keep secret)
+public_key_path = "auth_public.pem"     # RSA public verification key
+token_ttl_hours = 12                    # session lifetime
+issuer = "tex2word-web"
+
+# --- Assistant chat memory (Sprint 13d) --------------------------------------
+# Bounds the conversation context: the most recent `history_budget_turns`
+# messages are sent verbatim; older ones are folded into a rolling summary.
+# `project_memory` injects the per-project notes (the brain icon in the chat).
+[assistant]
+history_budget_turns = 12
+rolling_summary = true
+project_memory = true
+# summary_provider = "deepseek"   # cheaper model for summaries (defaults to the chat provider)
+
+# --- Request hardening (Sprint 14) -------------------------------------------
+# Body-size cap and per-IP rate limits. When [auth] is on, projects (and their
+# conversations/jobs) are also scoped to their owner — a non-admin user only sees
+# their own; admins see all. Unowned (legacy) projects stay shared.
+[security]
+max_body_mb = 50
+rate_limit_enabled = true
+rate_limit_per_min = 240        # general /api requests per IP
+heavy_rate_limit_per_min = 60   # convert / assistant / chat / import per IP
+login_rate_limit_per_min = 10   # POST /api/auth/login per IP
+
+# --- LLM generation defaults ------------------------------------------------
+[llm]
+max_tokens = 8192               # default max tokens for completions
+
+# --- Frontend / serving ------------------------------------------------------
+[frontend]
+host = "0.0.0.0"
+port = 8000                     # single-process: SPA is served by the backend
+# Comma-separated allowed CORS origins. Empty = allow all (dev only).
+CORS = ""
+nginx_enable = false
+nginx_config_filepath = "deploy/nginx.conf"
+
+# --- LLM provider definitions ------------------------------------------------
+# type = "openai" | "claude". The "openai" type works for any
+# OpenAI-compatible API (DeepSeek, Minimax, Kimi, vLLM, etc.).
+
+[providers.openai]
+type = "openai"
+api_base = "https://api.openai.com/v1"
+api_key_env = "OPENAI_API_KEY"
+model = "gpt-4o"
+
+[providers.claude]
+type = "claude"
+api_base = "https://api.anthropic.com"
+api_key_env = "ANTHROPIC_API_KEY"
+model = "claude-opus-4-8"
+
+[providers.deepseek]
+type = "openai"
+api_base = "https://api.deepseek.com"
+api_key_env = "DEEPSEEK_API_KEY"
+model = "deepseek-chat"
+
+[providers.kimi]
+type = "openai"
+api_base = "https://api.moonshot.cn/v1"
+api_key_env = "MOONSHOT_API_KEY"
+model = "moonshot-v1-8k"
+
+[providers.minimax]
+type = "openai"
+api_base = "https://api.minimax.chat/v1"
+api_key_env = "MINIMAX_API_KEY"
+model = "abab6.5s-chat"
+
+[providers.local_vllm]
+type = "openai"
+api_base = "http://localhost:8000/v1"
+api_key = "dummy"
+model = "Qwen/Qwen2.5-72B-Instruct"

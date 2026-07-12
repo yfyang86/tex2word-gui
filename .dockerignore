@@ -1,0 +1,15 @@
+.git
+.github
+.venv
+**/__pycache__
+*.pyc
+*.db
+*.pem
+*.log
+config.toml
+tests
+front-prototype
+Sprint
+DEVELOPER-MANUAL.md
+uv.lock
+.pytest_cache

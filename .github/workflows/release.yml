@@ -1,0 +1,60 @@
+name: Release
+
+# Cut a GitHub Release when a version tag is pushed (e.g. v0.1.0, v1.2.0-rc1).
+# The tag is the trigger: `git tag -a vX.Y.Z && git push origin vX.Y.Z`.
+#
+# Artifact publishing is opt-in, so a release is never blocked by an
+# environment that isn't set up yet. Enable per repository:
+#   - Docker → GHCR: set repository variable PUBLISH_DOCKER = true
+#   - PyPI:          set repository variable PUBLISH_PYPI  = true
+#                    AND configure a PyPI Trusted Publisher for this workflow
+#                    (https://docs.pypi.org/trusted-publishers/).
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  # ── Always: test the tag, then publish a GitHub Release with generated notes.
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # create the release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history so generated notes can diff the previous tag
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+
+      - name: Set up the environment
+        run: |
+          uv venv --python 3.12
+          uv pip install -e ".[dev]"
+
+      # Never publish a release from a red tree.
+      - name: Check frontend JS syntax
+        run: node --check app/static/app.js
+
+      - name: Run tests
+        run: uv run pytest -q
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Pre-release for tags carrying a suffix (e.g. v1.0.0-rc1, v1.0.0-beta).
+          prerelease=""
+          case "${GITHUB_REF_NAME}" in
+            *-*) prerelease="--prerelease" ;;
+          esac
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            --verify-tag \
+            ${prerelease}
+
