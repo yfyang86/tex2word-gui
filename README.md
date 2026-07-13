@@ -4,6 +4,7 @@ A web workspace for converting **LaTeX → Microsoft Word (`.docx`)** with the
 [`tex2word`](https://pypi.org/project/tex2word/) engine. tex2word is the
 essential module; the web app is a thin adapter around its IR and outputs.
 
+![demo](./assets/workflow.gif)
 
 | Image | Description |
 |:------|:------------|
@@ -255,4 +256,3 @@ guide, testing, and extension recipes.
 Yifan Yang <yfyang.86 AT hotmail>
 
 Lic: Apache 2.0
-
