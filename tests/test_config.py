@@ -121,3 +121,17 @@ def test_config_endpoint_redacted():
     for p in body["providers"]:
         assert "api_key" not in p
         assert set(p) >= {"name", "type", "model", "has_key"}
+
+
+def test_import_limits_parse_and_default(tmp_path):
+    p = tmp_path / "c.toml"
+    p.write_text("[import]\nmax_archive_mb = 250\nmax_archive_files = 2000\n")
+    cfg = config_mod.load_config(p)
+    assert cfg.imports.max_archive_mb == 250 and cfg.imports.max_archive_files == 2000
+    assert cfg.imports.max_archive_bytes == 250 * 1024 * 1024
+    assert cfg.public()["import"] == {"max_archive_mb": 250, "max_archive_files": 2000}
+    p.write_text("[default]\n")
+    assert config_mod.load_config(p).imports.max_archive_mb == 100
+    p.write_text("[import]\nmax_archive_mb = 0\n")
+    with pytest.raises(ValueError):
+        config_mod.load_config(p)

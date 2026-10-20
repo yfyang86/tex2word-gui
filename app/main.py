@@ -53,7 +53,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 config = get_config()
 
-app = FastAPI(title="Tex Word Studio", version="0.1.0")
+app = FastAPI(title="Tex Word Studio", version=__version__)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.frontend.cors_origins(),
@@ -106,9 +106,13 @@ async def body_limit(request: Request, call_next):
             size = int(cl)
         except ValueError:
             size = 0
-        if size > config.security.max_body_bytes:
+        limit_mb = config.security.max_body_mb
+        if request.url.path == "/api/projects/import/archive":
+            # archive uploads may go up to the import limit ([import].max_archive_mb)
+            limit_mb = max(limit_mb, config.imports.max_archive_mb)
+        if size > limit_mb * 1024 * 1024:
             return JSONResponse(
-                {"detail": f"request body too large (max {config.security.max_body_mb} MB)"},
+                {"detail": f"request body too large (max {limit_mb} MB)"},
                 status_code=413,
             )
     return await call_next(request)
@@ -433,7 +437,12 @@ def _store_assets(project_id: str, assets: dict[str, bytes]) -> None:
 @app.post("/api/projects/import/arxiv", status_code=201)
 def import_arxiv(req: ArxivImport, request: Request) -> dict:
     try:
-        arxiv_id, files, assets, main_path = ingest.from_arxiv(req.arxiv_id)
+        arxiv_id, files, assets, main_path = ingest.from_arxiv(
+            req.arxiv_id, max_bytes=config.imports.max_archive_bytes,
+            max_files=config.imports.max_archive_files,
+        )
+    except ingest.IngestTooLarge as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
     except ingest.IngestError as exc:
         # bad id is the caller's fault (422); a download/unpack failure is upstream (502)
         msg = str(exc)
@@ -453,7 +462,12 @@ async def import_archive(
 ) -> dict:
     data = await file.read()
     try:
-        proj_name, files, assets, main_path = ingest.from_archive(name, file.filename, data)
+        proj_name, files, assets, main_path = ingest.from_archive(
+            name, file.filename, data, max_bytes=config.imports.max_archive_bytes,
+            max_files=config.imports.max_archive_files,
+        )
+    except ingest.IngestTooLarge as exc:
+        raise HTTPException(status_code=413, detail=str(exc)) from exc
     except ingest.IngestError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     project = projects.create(proj_name, kind="tex", main_path=main_path,

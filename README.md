@@ -130,6 +130,12 @@ present and falls back to `config.sample.toml` otherwise. `GET /api/config`
 returns a **redacted** view — key values are never exposed, only `has_key` and
 the env-var name. With no key set, the assistant returns a clear `422`.
 
+Imports are bounded by `[import]`: `max_archive_mb` (default **100**) caps an
+arXiv download or uploaded archive *and* the total size of the files extracted
+from it, and `max_archive_files` (default 500) caps the file count. Over the
+limit, the import fails with a `413` naming the setting to raise. Archive
+uploads may exceed `[security].max_body_mb` up to `max_archive_mb`.
+
 ## Accounts & admin (optional auth)
 
 Authentication is **off by default** — the app runs open. To require a login,
