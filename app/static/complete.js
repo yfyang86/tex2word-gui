@@ -12,10 +12,11 @@
 // and user macros/environments defined anywhere in the project.
 "use strict";
 (function (root, factory) {
-  const api = factory();
-  if (typeof module === "object" && module.exports) module.exports = api;
+  const node = typeof module === "object" && module.exports;
+  const api = factory(node ? require("./symbols.js") : root.TexSymbols);
+  if (node) module.exports = api;
   else root.TexComplete = api;
-})(typeof self !== "undefined" ? self : this, function () {
+})(typeof self !== "undefined" ? self : this, function (SYM) {
   // ── Catalog ────────────────────────────────────────────────────────────
   // [name, snippet-after-name, description, where] — where: "t" text, "m" math,
   // "b" both; an optional 5th field names the package that provides it.
@@ -31,6 +32,8 @@
     ["paragraph", "{${1:title}}", "run-in paragraph heading", "t"],
     ["subparagraph", "{${1:title}}", "run-in sub-paragraph heading", "t"],
     ["appendix", "", "start the appendix", "t"],
+    ["begin", "{${1}}", "start an environment", "b"],
+    ["end", "{${1}}", "end the open environment", "b"],
     ["label", "{${1:key}}", "label for \\ref", "b"],
     ["ref", "{${1:key}}", "cross-reference", "b"],
     ["eqref", "{${1:key}}", "equation reference (with parentheses)", "b", "amsmath"],
@@ -193,6 +196,34 @@
       .map((g) => [g, "", "Greek letter", "m"]),
   ];
 
+  // Symbols (symbols.js) join the catalog and carry their SVG sprite id.
+  // (The preview shows the glyph, so their detail names the group instead.)
+  const SYMBOL_OF = new Map();
+  if (SYM) {
+    const at = new Map(C.map((c, i) => [c[0], i]));
+    for (const sy of SYM.LIST) {
+      SYMBOL_OF.set(sy.cmd, SYM.symbolId(sy.cmd));
+      const group = sy.group.toLowerCase();
+      if (!at.has(sy.cmd)) { at.set(sy.cmd, C.length); C.push([sy.cmd, sy.snippet, group, sy.where, sy.pkg]); continue; }
+      const row = C[at.get(sy.cmd)];
+      if (row[2] === sy.glyph || [...row[2]].length <= 2) row[2] = group;  // was just the glyph
+    }
+  }
+
+  // Tie-breaker: the commands people type most win equal scores.
+  const POPULAR = new Set(("alpha beta gamma delta epsilon theta lambda mu pi sigma phi omega frac sum " +
+    "int infty partial leq geq neq approx cdot times in subset to rightarrow mathbb mathbf mathcal " +
+    "text sqrt hat bar left right section subsection label ref cite textbf emph item begin end " +
+    "includegraphics caption footnote").split(" "));
+
+  // xcolor's base colours (always available with xcolor/color) → CSS swatch.
+  const BASE_COLORS = {
+    red: "#ff0000", green: "#00ff00", blue: "#0000ff", cyan: "#00ffff", magenta: "#ff00ff",
+    yellow: "#ffff00", black: "#000000", white: "#ffffff", gray: "#808080", darkgray: "#404040",
+    lightgray: "#bfbfbf", brown: "#bf8040", lime: "#bfff00", olive: "#808000", orange: "#ff8000",
+    pink: "#ffbfbf", purple: "#bf0040", teal: "#008080", violet: "#800080",
+  };
+
   // [name, body, description, package?] — body goes between \begin and \end.
   const E = [
     ["equation", "\t${1}", "numbered equation"],
@@ -323,12 +354,42 @@
     let m;
     // new commands only: \renewcommand targets already exist (often layout
     // parameters such as \topfraction redefined by a class file)
-    const cmdRe = /\\(?:newcommand|providecommand|DeclareRobustCommand)\*?\s*\{?\s*\\([a-zA-Z@]+)\s*\}?\s*(?:\[(\d)\])?/g;
-    while ((m = cmdRe.exec(code))) ix.macros.set(m[1], { name: m[1], args: +(m[2] || 0), file, line: lineAt(code, m.index) });
+    const bodyAt = (i) => {
+      while (/\s/.test(code[i] || "")) i++;
+      const g = code[i] === "{" ? braced(code, i) : null;
+      return g ? g.value.replace(/\s+/g, " ").trim().slice(0, 70) : "";
+    };
+    // \newcommand{\name}[n][default]{body}: with a default, the first of the n
+    // arguments is optional ([…]) and the snippet only asks for the others
+    const cmdRe = /\\(?:newcommand|providecommand|DeclareRobustCommand)\*?\s*\{?\s*\\([a-zA-Z@]+)\s*\}?\s*(?:\[(\d)\])?\s*(?:\[([^\]]*)\])?/g;
+    while ((m = cmdRe.exec(code))) {
+      const n = +(m[2] || 0), opt = m[3] !== undefined && n > 0;
+      ix.macros.set(m[1], { name: m[1], args: n, sig: (opt ? ["o"] : []).concat(Array(opt ? n - 1 : n).fill("m")),
+                            body: bodyAt(cmdRe.lastIndex), file, line: lineAt(code, m.index) });
+    }
+    // xparse: \NewDocumentCommand{\name}{s o m O{x} m}{body}
+    const docRe = /\\(?:New|Renew|Provide|Declare)DocumentCommand\s*\{?\s*\\([a-zA-Z@]+)\s*\}?\s*\{([^}]*)\}/g;
+    while ((m = docRe.exec(code))) {
+      // every argument token takes a #n (a star `s` too); only `m` is asked for
+      const sig = (m[2].replace(/[OD]\{[^}]*\}|[DEe]\{[^}]*\}\{[^}]*\}/g, "o").match(/[mogsrRvbt]/g) || [])
+        .map((t) => (t === "m" ? "m" : "o"));
+      ix.macros.set(m[1], { name: m[1], args: sig.length, sig, body: bodyAt(docRe.lastIndex), file, line: lineAt(code, m.index) });
+    }
     const defRe = /\\(?:g|e|x)?def\s*\\([a-zA-Z@]+)((?:#\d)*)/g;
-    while ((m = defRe.exec(code))) ix.macros.set(m[1], { name: m[1], args: (m[2].match(/#/g) || []).length, file, line: lineAt(code, m.index) });
+    while ((m = defRe.exec(code))) {
+      const n = (m[2].match(/#/g) || []).length;
+      ix.macros.set(m[1], { name: m[1], args: n, sig: Array(n).fill("m"), body: bodyAt(defRe.lastIndex), file, line: lineAt(code, m.index) });
+    }
     const opRe = /\\DeclareMathOperator\*?\s*\{\s*\\([a-zA-Z@]+)\s*\}/g;
-    while ((m = opRe.exec(code))) ix.macros.set(m[1], { name: m[1], args: 0, math: true, file, line: lineAt(code, m.index) });
+    while ((m = opRe.exec(code))) ix.macros.set(m[1], { name: m[1], args: 0, sig: [], math: true, body: bodyAt(opRe.lastIndex), file, line: lineAt(code, m.index) });
+    // colours: \definecolor{name}{model}{spec}, \colorlet{name}{base}
+    const colRe = /\\definecolor\s*\{([^}]+)\}\s*\{([^}]+)\}\s*\{([^}]+)\}/g;
+    while ((m = colRe.exec(code))) ix.colors.set(m[1].trim(), { name: m[1].trim(), css: colorCss(m[2], m[3]), file, line: lineAt(code, m.index) });
+    const letRe = /\\colorlet\s*\{([^}]+)\}\s*\{([^}!]+)[^}]*\}/g;
+    while ((m = letRe.exec(code))) {
+      const base = m[2].trim();
+      ix.colors.set(m[1].trim(), { name: m[1].trim(), css: (ix.colors.get(base) || {}).css || BASE_COLORS[base] || "", file, line: lineAt(code, m.index) });
+    }
     const envRe = /\\(?:re)?newenvironment\s*\{([^}]+)\}\s*(?:\[(\d)\])?/g;
     while ((m = envRe.exec(code))) ix.envs.set(m[1], { name: m[1], args: +(m[2] || 0), file, desc: "project environment" });
     const thmRe = /\\newtheorem\*?\s*\{([^}]+)\}\s*(?:\[[^\]]*\])?\s*\{([^}]*)\}/g;
@@ -387,9 +448,24 @@
     }
   }
 
+  // \definecolor model + spec → CSS colour ("" when the model is not handled)
+  function colorCss(model, spec) {
+    const md = model.trim(), v = spec.split(",").map((x) => parseFloat(x));
+    const hex = (n) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0");
+    if (md === "HTML" && /^[0-9a-fA-F]{6}$/.test(spec.trim())) return "#" + spec.trim().toLowerCase();
+    if (md === "rgb" && v.length === 3) return "#" + v.map((x) => hex(x * 255)).join("");
+    if (md === "RGB" && v.length === 3) return "#" + v.map(hex).join("");
+    if (md === "gray" && v.length === 1) return "#" + hex(v[0] * 255).repeat(3);
+    if (md === "cmyk" && v.length === 4) {
+      const [c, mm, y, k] = v;
+      return "#" + [c, mm, y].map((x) => hex(255 * (1 - x) * (1 - k))).join("");
+    }
+    return "";
+  }
+
   function buildIndex(files) {
     const ix = {
-      labels: [], cites: [], macros: new Map(), envs: new Map(), packages: new Set(),
+      labels: [], cites: [], macros: new Map(), envs: new Map(), packages: new Set(), colors: new Map(),
       freq: new Map(), files: Object.keys(files || {}).sort(),
     };
     for (const [path, text] of Object.entries(files || {})) {
@@ -479,6 +555,8 @@
     const listArg = (kind, raw) => { const q = raw.split(",").pop().replace(/^\s+/, ""); return arg(kind, q); };
     if ((m = /\\(begin|end)\s*\{([A-Za-z@*]*)$/.exec(before))) return { ...arg(m[1] === "end" ? "end" : "env", m[2]) };
     if ((m = /\\(?:[a-zA-Z]*ref|[cC]ref|labelcref|autoref)\*?\s*\{([^{}]*)$/.exec(before))) return listArg("label", m[1]);
+    if ((m = /\\label\s*\{([^{}]*)$/.exec(before))) return arg("newlabel", m[1]);
+    if ((m = /\\(?:textcolor|color|colorbox|fcolorbox|pagecolor|cellcolor|rowcolor|columncolor)\s*(?:\[[^\]]*\])?\s*\{([^{}]*)$/.exec(before))) return arg("color", m[1]);
     if ((m = /\\[a-zA-Z]*cite[a-zA-Z]*\*?\s*(?:\[[^\]]*\]\s*){0,2}\{([^{}]*)$/.exec(before))) return listArg("cite", m[1]);
     if ((m = /\\(?:input|include|subfile|(?:sub)?import\s*\{[^}]*\})\s*\{([^{}]*)$/.exec(before))) return arg("file-tex", m[1]);
     if ((m = /\\includegraphics\s*(?:\[[^\]]*\])?\s*\{([^{}]*)$/.exec(before))) return arg("file-img", m[1]);
@@ -522,6 +600,77 @@
     return Array.from({ length: n }, (_, i) => `{\${${i + 1}:#${i + 1}}}`).join("");
   }
 
+  // Arguments a project macro asks for: mandatory ones only (optional [] are
+  // left out), numbered as in its definition.
+  function macroSnippet(mac) {
+    const sig = mac.sig || Array(mac.args || 0).fill("m");
+    let stop = 0;
+    return sig.map((t, i) => (t === "m" ? `{\${${++stop}:#${i + 1}}}` : "")).join("");
+  }
+
+  // Label names for a new \label{…}: a prefix from where it sits (figure → fig,
+  // equation → eq, …, a heading → sec) and a slug of the caption / heading.
+  const LABEL_PREFIX = {
+    figure: "fig", subfigure: "fig", wrapfigure: "fig", table: "tab", subtable: "tab", wraptable: "tab",
+    equation: "eq", align: "eq", gather: "eq", multline: "eq", flalign: "eq", eqnarray: "eq", alignat: "eq",
+    theorem: "thm", lemma: "lem", proposition: "prop", corollary: "cor", definition: "def",
+    remark: "rem", example: "ex", algorithm: "alg", itemize: "item", enumerate: "item", description: "item",
+    lstlisting: "lst", chapter: "chap", section: "sec", subsection: "sec", subsubsection: "sec", paragraph: "sec",
+  };
+
+  function slugify(t) {
+    const stop = new Set(["a", "an", "the", "of", "and", "for", "in", "on", "to", "with", "by", "from", "our"]);
+    return cleanText(t).toLowerCase().replace(/[^a-z0-9\s-]/g, " ").split(/\s+/)
+      .filter((w) => w && !stop.has(w)).slice(0, 3).join("-");
+  }
+
+  function labelSuggestions(text, at, index) {
+    const env = openEnv(text, at);
+    const base = env ? env.replace(/\*$/, "") : null;
+    let prefix = base && LABEL_PREFIX[base], title = "";
+    const lookback = text.slice(Math.max(0, at - 1500), at);
+    if (prefix && prefix !== "eq" && prefix !== "item") {
+      const begin = lookback.lastIndexOf("\\begin{" + env + "}");
+      const cap = /\\caption\s*(?:\[[^\]]*\])?\s*\{([^}]*)/.exec(begin >= 0 ? lookback.slice(begin) : "");
+      if (cap) title = cap[1];
+    }
+    if (!prefix || prefix === "item") {
+      const hs = [...lookback.matchAll(/\\(chapter|section|subsection|subsubsection|paragraph)\*?\s*(?:\[[^\]]*\])?\s*\{([^}]*)\}/g)];
+      const h = hs[hs.length - 1];
+      // a label right after a heading (within a short line or two) names it
+      if (h && lookback.length - (h.index + h[0].length) < 160 + "\\label{".length) {
+        prefix = LABEL_PREFIX[h[1]]; title = h[2];
+      }
+    }
+    if (!prefix) return [];
+    const taken = new Set(index.labels.map((l) => l.key));
+    const out = [];
+    const slug = slugify(title);
+    if (slug) {
+      let key = `${prefix}:${slug}`, n = 2;
+      while (taken.has(key)) key = `${prefix}:${slug}-${n++}`;
+      out.push(key);
+    }
+    out.push(`${prefix}:`);
+    return out;
+  }
+
+  // Environment names Tab can expand from a bare word ("itemize" → block).
+  function envNames(index) {
+    return new Set(E.map((e) => e[0]).concat([...((index && index.envs) || new Map()).keys()]));
+  }
+
+  // Full \begin{name}…\end{name} snippet for an environment.
+  function envBlock(name, index) {
+    const e = E.find((x) => x[0] === name);
+    const proj = index && index.envs && index.envs.get(name);
+    const body = e ? e[1] : "\t${1}";
+    const head = (/^(\[[^\n]*\]|\{[^\n]*\})/.exec(body) || [""])[0];
+    const rest = body.slice(head.length);
+    return `\\begin{${name}}${proj && proj.args ? snippetLabel(proj.args) : ""}${head}` +
+      `${rest.startsWith("\n") ? rest : "\n" + rest}\n\\end{${name}}`;
+  }
+
   function candidates(ctx, index, opts) {
     const o = opts || {};
     const items = [];
@@ -532,19 +681,22 @@
       for (const [name, args, desc, where, pkg] of C) {
         if (seen.has(name)) continue;
         seen.add(name);
-        let boost = Math.min(120, (index.freq.get(name.replace(/[^a-zA-Z].*$/, "")) || 0) * 6);
+        let boost = Math.min(120, (index.freq.get(name.replace(/[^a-zA-Z].*$/, "")) || 0) * 6) + (POPULAR.has(name) ? 25 : 0);
         if (where === "m") boost += math ? 150 : -250;
         else if (where === "t") boost += math ? -250 : 0;
         if (pkg && !index.packages.has(pkg) && !/^(amsmath|amssymb|amsthm)$/.test(pkg)) boost -= 60;
-        push({ kind: "cmd", label: "\\" + name, match: name, insert: "\\" + name + args, detail: desc, source: pkg || "", boost });
+        push({ kind: "cmd", label: "\\" + name, match: name, insert: "\\" + name + args, detail: desc, source: pkg || "", boost,
+               sym: SYMBOL_OF.get(name) });
       }
       for (const mac of index.macros.values()) {
         if (seen.has(mac.name) || mac.name.includes("@")) continue;  // @-names are internals
         seen.add(mac.name);
         const fromPkg = /\.(sty|cls)$/i.test(mac.file);
         const what = fromPkg ? "package macro" : "project macro";
-        push({ kind: "macro", label: "\\" + mac.name, match: mac.name, insert: "\\" + mac.name + snippetLabel(mac.args),
-               detail: mac.args ? `${what}, ${mac.args} arg${mac.args > 1 ? "s" : ""}` : what,
+        const opt = (mac.sig || []).filter((t) => t === "o").length;
+        const argInfo = mac.args ? `, ${mac.args} arg${mac.args > 1 ? "s" : ""}${opt ? ` (${opt} optional)` : ""}` : "";
+        push({ kind: "macro", label: "\\" + mac.name, match: mac.name, insert: "\\" + mac.name + macroSnippet(mac),
+               detail: what + argInfo + (mac.body ? ` → ${mac.body}` : ""),
                source: `${mac.file}:${mac.line}`,
                boost: (fromPkg ? -40 : 60) + Math.min(120, (index.freq.get(mac.name) || 0) * 6) });
       }
@@ -593,6 +745,19 @@
         if (ctx.kind !== "file-img") ins = ins.replace(/\.(tex|bib)$/i, "");
         push({ kind: "file", label: ins, insert: ins, match: ins, detail: f, source: "" });
       }
+    } else if (ctx.kind === "color") {
+      const seen = new Set();
+      for (const c of index.colors.values()) {
+        seen.add(c.name);
+        push({ kind: "color", label: c.name, insert: c.name, detail: c.css || "project colour", source: `${c.file}:${c.line}`, swatch: c.css, boost: 60 });
+      }
+      for (const [name, css] of Object.entries(BASE_COLORS)) {
+        if (!seen.has(name)) push({ kind: "color", label: name, insert: name, detail: css, source: "xcolor", swatch: css });
+      }
+    } else if (ctx.kind === "newlabel") {
+      const keys = o.labelSuggestions || [];
+      keys.forEach((key, i) => push({ kind: "newlabel", label: key, insert: key, detail: "new label",
+                                     source: "", boost: (keys.length - i) * 10 }));
     } else if (ctx.kind === "package") {
       for (const p of PACKAGES) push({ kind: "pkg", label: p.name, insert: p.name, detail: p.desc, source: index.packages.has(p.name) ? "loaded" : "", boost: index.packages.has(p.name) ? -30 : 0 });
     } else if (ctx.kind === "class") {
@@ -615,6 +780,7 @@
     const o = { ...(opts || {}) };
     if (ctx.kind === "cmd") o.math = inMath(text, caret);
     if (ctx.kind === "end") o.openEnv = openEnv(text, ctx.from - "\\end{".length);
+    if (ctx.kind === "newlabel") o.labelSuggestions = labelSuggestions(text, ctx.from, index);
     const items = candidates(ctx, index, o);
     // replace the whole token under the caret, plus a closing brace already there
     const after = text.slice(caret);
@@ -654,7 +820,7 @@
   }
 
   return {
-    buildIndex, knownKeys, context, complete, candidates, expandSnippet, indentSnippet,
+    buildIndex, knownKeys, context, complete, envBlock, envNames, labelSuggestions, colorCss, macroSnippet, candidates, expandSnippet, indentSnippet,
     inMath, openEnv, needsEnd, inComment, score, parseBib, relPath,
     CATALOG: C, ENVIRONMENTS: E, PACKAGES,
   };
