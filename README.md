@@ -56,6 +56,12 @@ essential module; the web app is a thin adapter around its IR and outputs.
 - **Symbol palette** — ~250 common symbols with SVG glyph previews (also shown
   in the completion list), searchable by name or group; math symbols are
   wrapped in `$…$` when inserted outside math.
+- **Table generator** (left panel → Tools) — build a LaTeX table in a
+  spreadsheet-like grid: paste cells from Excel/Sheets, CSV or LaTeX, merge cells,
+  bold/italic/underline, alignment, borders, text and cell colours; pick standard
+  or booktabs style, caption, landscape, width (tabularx / scaled), long table.
+  The code updates live and is inserted at the cursor — or replaces the table the
+  cursor was in — with any missing `\usepackage` lines added to the preamble.
 - **Collapsible, resizable side panels** — hide the files pane (**Ctrl/Cmd+B**)
   or the report/assistant pane (**Ctrl/Cmd+Alt+B**), drag their edges to resize;
   the layout is remembered per browser.
@@ -281,7 +287,8 @@ app/
   models.py      pydantic schemas
   static/        single-page UI (HTML/CSS/JS + design tokens); sync.js and
                  complete.js are DOM-free engines shared with the node tests;
-                 symbols.js + symbols.svg are the symbol list and its sprite
+                 symbols.js + symbols.svg are the symbol list and its sprite;
+                 tablegen.js (engine) + tablegen-ui.js the table generator
 tests/           pytest suite (one file per area) + conftest
   js/            node unit tests for the frontend engines
   e2e/           Playwright end-to-end specs + runner (boots the app on a temp DB)

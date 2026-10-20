@@ -1667,7 +1667,7 @@ function setupPanels() {
   });
   // Ctrl/Cmd+B → files; Ctrl/Cmd+Alt+B → right panel (VS Code's side-bar keys).
   document.addEventListener("keydown", (e) => {
-    if ($("#view-workspace").hidden) return;
+    if ($("#view-workspace").hidden || !$("#tg-modal").hidden) return;  // the table generator owns Ctrl+B (bold)
     if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.code !== "KeyB") return;
     e.preventDefault();
     togglePanel(e.altKey ? "report" : "files");

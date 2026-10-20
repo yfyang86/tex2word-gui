@@ -457,3 +457,78 @@ button { font-family: var(--font); cursor: pointer; border: 1px solid transparen
 .about-meta > div { display: flex; justify-content: space-between; font-size: 12.5px; border-top: 1px solid var(--border); padding-top: 6px; }
 .about-meta dt { color: var(--text-3); }
 .about-meta dd { color: var(--text-1); font-family: var(--mono); font-size: 12px; }
+
+/* ── Left panel tools ─────────────────────────────────── */
+.pane-tools { flex: none; border-top: 1px solid var(--border); padding: 8px 8px 10px; display: flex; flex-direction: column; gap: 4px; }
+.pane-tools .eyebrow { padding: 0 6px 2px; }
+.tool-row { display: flex; align-items: center; gap: 8px; width: 100%; border: none; background: none; text-align: left;
+  font-size: 12.5px; color: var(--text-2); padding: 6px 8px; border-radius: 7px; cursor: pointer; }
+.tool-row:hover { background: var(--hover-bg); color: var(--text-1); }
+.rail-tool { margin-top: 10px; }
+
+/* ── Table generator ──────────────────────────────────── */
+.tg-modal { z-index: 45; }
+.tg-card { position: relative; width: min(1180px, 96vw); height: min(900px, 94vh); background: var(--bg-shell);
+  border-radius: var(--radius-lg); box-shadow: var(--shadow-menu); display: flex; flex-direction: column; overflow: hidden; }
+.tg-top { display: flex; align-items: center; gap: 14px; padding: 8px 12px; border-bottom: 1px solid var(--border); background: var(--bg-elevated); }
+.tg-title { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; font-size: 13px; color: var(--text-1); white-space: nowrap; }
+.tg-menubar { display: flex; gap: 2px; }
+.tg-menubar button { border: none; background: none; font-size: 12.5px; color: var(--text-2); padding: 4px 9px; border-radius: 6px; cursor: pointer; }
+.tg-menubar button:hover, .tg-menubar button.open { background: var(--hover-bg); color: var(--text-1); }
+.tg-toolbar { display: flex; flex-wrap: wrap; gap: 10px; padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--bg-content); }
+.tg-tgroup { display: flex; gap: 2px; padding-right: 10px; border-right: 1px solid var(--border); }
+.tg-tgroup:last-child { border-right: none; }
+.tg-tb { width: 30px; height: 28px; display: flex; align-items: center; justify-content: center; border: none; background: none; border-radius: 6px; color: var(--text-2); cursor: pointer; }
+.tg-tb:hover { background: var(--hover-bg); color: var(--text-1); }
+.tg-tb.on { background: var(--bg-elevated); color: var(--text-1); box-shadow: inset 0 0 0 1px var(--border-hover); }
+.tg-banner { padding: 6px 14px; font-size: 12px; color: var(--text-2); background: var(--warning-bg); border-bottom: 1px solid var(--border); }
+.tg-banner code { font-family: var(--mono); font-size: 11.5px; }
+.tg-link { border: none; background: none; color: var(--accent-service); text-decoration: underline; cursor: pointer; font-size: 12px; padding: 0 4px; }
+.tg-gridwrap { position: relative; flex: 1 1 44%; min-height: 150px; overflow: auto; padding: 12px 14px; outline: none; background: var(--bg-shell); }
+.tg-gridwrap:focus-visible { box-shadow: inset 0 0 0 2px var(--border-hover); }
+.tg-grid { border-collapse: collapse; font-size: 13px; color: var(--text-1); user-select: none; background: var(--bg-content); }
+.tg-grid th { font-weight: 500; font-size: 11px; color: var(--text-3); background: var(--bg-elevated); border: 1px solid var(--border); padding: 3px 8px; cursor: pointer; white-space: nowrap; }
+.tg-grid th.sel { background: var(--hover-bg); color: var(--text-1); }
+.tg-grid .tg-corner { width: 28px; }
+.tg-colh { min-width: 86px; }
+.tg-colmeta { margin-left: 6px; font-family: var(--mono); font-size: 9.5px; color: var(--text-4); }
+.tg-rowh { width: 28px; text-align: center; }
+.tg-grid td { border: 1px dotted var(--border-hover); min-width: 86px; height: 30px; padding: 4px 8px; white-space: pre; cursor: cell; }
+.tg-grid td.sel { background-image: linear-gradient(rgba(66,133,244,.13), rgba(66,133,244,.13)); }
+.tg-grid td.focus { outline: 2px solid #3b78e7; outline-offset: -2px; }
+.tg-edit { position: absolute; z-index: 3; font: inherit; font-size: 13px; padding: 4px 8px; border: 2px solid #3b78e7; border-radius: 0;
+  outline: none; resize: none; background: var(--bg-content); color: var(--text-1); box-shadow: var(--shadow-menu); overflow: hidden; }
+.tg-bottom { flex: 1 1 56%; min-height: 0; display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(320px, 1fr); border-top: 1px solid var(--border); }
+.tg-result { display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border); background: var(--bg-content); }
+.tg-result-head { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12.5px; color: var(--text-1); }
+.tg-result-head .muted { font-size: 11.5px; }
+.tg-code { flex: 1; min-height: 0; margin: 0; overflow: auto; padding: 10px 14px; font-family: var(--mono); font-size: 12px; line-height: 1.6; color: var(--text-1); white-space: pre; }
+.tg-notes { flex: none; padding: 6px 12px 8px; font-size: 11.5px; color: var(--text-3); border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 3px; }
+.tg-notes:empty { display: none; }
+.tg-notes code { font-family: var(--mono); font-size: 11px; background: var(--bg-elevated); padding: 0 4px; border-radius: 3px; }
+.tg-notes code.tg-missing { background: var(--warning-bg); color: var(--warning); }
+.tg-addpk { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; }
+.tg-options { overflow: auto; padding: 4px 14px 12px; font-size: 12.5px; color: var(--text-2); }
+.tg-opt-title { font-weight: 600; color: var(--text-1); padding: 8px 0 4px; }
+.tg-opt { display: grid; grid-template-columns: 84px 1fr; gap: 8px; padding: 7px 0; border-top: 1px solid var(--border); }
+.tg-opt-k { font-weight: 600; color: var(--text-1); }
+.tg-opt-v { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; }
+.tg-opt-v label { display: inline-flex; align-items: center; gap: 5px; cursor: pointer; }
+.tg-help { flex-basis: 100%; font-size: 11.5px; color: var(--text-3); }
+.tg-help code { font-family: var(--mono); font-size: 11px; }
+.tg-sub { color: var(--text-3); margin-left: 6px; }
+.tg-capfields { flex-basis: 100%; display: flex; gap: 6px; }
+.tg-capfields input { flex: 1; min-width: 0; font: inherit; font-size: 12px; padding: 4px 7px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-content); color: var(--text-1); }
+.tg-capfields input#tg-label { flex: 0 0 38%; font-family: var(--mono); font-size: 11.5px; }
+.tg-dropdown { position: absolute; z-index: 20; min-width: 220px; background: var(--bg-content); border: 1px solid var(--border);
+  border-radius: 8px; box-shadow: var(--shadow-menu); padding: 4px; display: flex; flex-direction: column; }
+.tg-mi { display: flex; justify-content: space-between; gap: 18px; border: none; background: none; text-align: left; padding: 6px 10px; border-radius: 5px; font-size: 12.5px; color: var(--text-1); cursor: pointer; }
+.tg-mi:hover:not([disabled]), .tg-mi:focus-visible { background: var(--hover-bg); outline: none; }
+.tg-mi[disabled] { color: var(--text-4); cursor: default; }
+.tg-mi kbd { font-family: var(--mono); font-size: 10.5px; color: var(--text-4); }
+.tg-sep { height: 1px; background: var(--border); margin: 4px 2px; }
+.tg-load { position: absolute; inset: 0; z-index: 25; background: rgba(27,27,24,.25); display: flex; align-items: center; justify-content: center; }
+.tg-load-card { width: min(640px, 90%); background: var(--bg-content); border-radius: var(--radius-lg); box-shadow: var(--shadow-menu); padding: 18px; }
+.tg-load-card h3 { font-size: 14px; color: var(--text-1); margin-bottom: 10px; }
+.tg-load-card textarea { width: 100%; height: 240px; font-family: var(--mono); font-size: 12px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px; resize: vertical; }
+@media (max-width: 900px) { .tg-bottom { grid-template-columns: 1fr; } }

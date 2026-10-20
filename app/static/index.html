@@ -112,6 +112,7 @@
       <div class="pane-rail">
         <button class="icon-btn" data-expand="files" title="Show files (Ctrl+B)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><polyline points="9 18 15 12 9 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <span class="rail-label" data-expand="files">Files</span>
+        <button class="icon-btn rail-tool" data-tool="tablegen" title="Table generator"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" stroke-width="2"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16" stroke="currentColor" stroke-width="2"/></svg></button>
       </div>
       <div class="pane-head">
         <span class="eyebrow">Files</span>
@@ -126,6 +127,12 @@
         <button class="icon-btn" data-collapse="files" title="Hide files (Ctrl+B)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><polyline points="15 18 9 12 15 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       </div>
       <div id="file-list" class="file-list"></div>
+      <div class="pane-tools">
+        <div class="eyebrow">Tools</div>
+        <button class="tool-row" data-tool="tablegen" title="Build a LaTeX table visually, or edit the table at the cursor">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" stroke-width="2"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16" stroke="currentColor" stroke-width="2"/></svg><span>Table generator</span>
+        </button>
+      </div>
     </aside>
     <div class="pane-resizer" data-resize="files" title="Drag to resize · double-click to hide"></div>
 
@@ -276,6 +283,52 @@
     </aside>
   </main>
 
+  <!-- ── table generator (app/static/tablegen-ui.js) ── -->
+  <div id="tg-modal" class="modal tg-modal" hidden>
+    <div class="tg-card" role="dialog" aria-label="Table generator">
+      <div class="tg-top">
+        <span class="tg-title"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" stroke-width="2"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16" stroke="currentColor" stroke-width="2"/></svg> Table generator</span>
+        <nav class="tg-menubar" id="tg-menubar"></nav>
+        <div class="spacer"></div>
+        <button class="icon-btn" id="tg-close" title="Close">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div class="tg-toolbar" id="tg-toolbar"></div>
+      <div class="tg-banner" id="tg-banner" hidden></div>
+      <div class="tg-gridwrap" id="tg-gridwrap" tabindex="0" aria-label="Table cells">
+        <table class="tg-grid" id="tg-grid"></table>
+        <textarea class="tg-edit" id="tg-edit" rows="1" spellcheck="false" hidden></textarea>
+      </div>
+      <div class="tg-bottom">
+        <section class="tg-result">
+          <div class="tg-result-head">
+            <b>Result</b><span class="muted">updated as you edit the table</span>
+            <div class="spacer"></div>
+            <button class="btn-secondary" id="tg-copy">Copy</button>
+            <button class="btn-primary" id="tg-insert">Insert into editor</button>
+          </div>
+          <pre class="tg-code" id="tg-code"></pre>
+          <div class="tg-notes" id="tg-notes"></div>
+        </section>
+        <section class="tg-options" id="tg-options"></section>
+      </div>
+      <div class="tg-dropdown" id="tg-menu" role="menu" hidden></div>
+      <div class="tg-load" id="tg-load" hidden>
+        <div class="tg-load-card">
+          <h3 id="tg-load-title">Load LaTeX table</h3>
+          <textarea id="tg-load-text" spellcheck="false" placeholder="Paste a \begin{tabular}…\end{tabular} (or a whole table float)"></textarea>
+          <div class="modal-actions">
+            <button class="btn-secondary" id="tg-load-cancel">Cancel</button>
+            <button class="btn-primary" id="tg-load-ok">Load</button>
+          </div>
+        </div>
+      </div>
+      <input type="file" id="tg-file" accept=".csv,.tsv,.txt,text/csv" hidden>
+      <input type="color" id="tg-color" hidden>
+    </div>
+  </div>
+
   <!-- ── import-markdown modal ── -->
   <div id="import-modal" class="modal" hidden>
     <div class="modal-card wide">
@@ -339,6 +392,8 @@
   <script src="/static/sync.js"></script>
   <script src="/static/symbols.js"></script>
   <script src="/static/complete.js"></script>
+  <script src="/static/tablegen.js"></script>
   <script src="/static/app.js"></script>
+  <script src="/static/tablegen-ui.js"></script>
 </body>
 </html>
