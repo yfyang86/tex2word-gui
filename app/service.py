@@ -19,8 +19,12 @@ from typing import Any, Callable
 import tex2word
 from tex2word import convert_source
 from tex2word.benchmark import validate_docx
+from tex2word.frontend import parse_document
+from tex2word.transforms import resolve_crossrefs
 from tex2word.report import ConversionReport, aggregate_html
 from tex2word.roundtrip import read_manifest, to_latex
+
+from .sourcemap import strip_markers
 
 # Conversion options we expose to the frontend, mapped to convert_source kwargs.
 _ALLOWED_FRONTENDS = {"pure", "latexml"}
@@ -196,6 +200,23 @@ def run_project(
             raise ConversionError(f"conversion failed: {exc}") from exc
 
 
+def parse_source(source: str, options: ConvertOptions) -> tuple[Any, ConversionReport]:
+    """Parse a single LaTeX string into ``(IR document, report)`` without
+    building a ``.docx`` — all the preview needs, at a fraction of the cost.
+    The LaTeXML frontend still goes through the full pipeline."""
+    if not source or not source.strip():
+        raise ConversionError("source is empty")
+    if options.frontend != "pure":
+        result = run_source(source, options)
+        return result.document, result.report
+    try:
+        doc, report = parse_document(source, ".")
+        resolve_crossrefs(doc, report)
+    except Exception as exc:
+        raise ConversionError(f"conversion failed: {exc}") from exc
+    return doc, report
+
+
 def convert(source: str, options: ConvertOptions) -> tuple[bytes, dict[str, Any]]:
     """Convert LaTeX ``source`` to ``.docx`` bytes plus a report dict."""
     result = run_source(source, options)
@@ -256,14 +277,14 @@ def make_figure_html(
     ``asset_url``) or when rasterisation isn't possible, so the caller can fall
     back to a placeholder.
     """
-    assets = assets or {}
+    assets = assets if assets is not None else {}
 
     def render(fig: Any) -> str | None:
         try:
             img = getattr(fig, "image", None)
             # Inline TikZ/PGF: no image node, compile the figure source.
             if img is None:
-                src = getattr(fig, "source", "") or ""
+                src = strip_markers(getattr(fig, "source", "") or "")
                 if not src:
                     return None
                 png = _tikz_png(src, dpi)
@@ -306,6 +327,28 @@ def preview(
     )
     data["report"] = report_to_dict(result.report)
     return data
+
+
+class LazyAssets(dict):
+    """Project binary assets, fetched from the store only on first lookup (most
+    previews never need them: raster figures are served by URL)."""
+
+    def __init__(self, loader: Callable[[], dict[str, bytes]]) -> None:
+        super().__init__()
+        self._loader: Callable[[], dict[str, bytes]] | None = loader
+
+    def _load(self) -> None:
+        if self._loader is not None:
+            loader, self._loader = self._loader, None
+            self.update(loader())
+
+    def __contains__(self, key: object) -> bool:
+        self._load()
+        return super().__contains__(key)
+
+    def __getitem__(self, key: str) -> bytes:
+        self._load()
+        return super().__getitem__(key)
 
 
 def convert_project(

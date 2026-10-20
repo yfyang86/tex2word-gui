@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -46,11 +46,23 @@ class PreviewRequest(BaseModel):
 
 
 class PreviewResponse(BaseModel):
-    html: str
+    # Full document HTML. ``None`` only when the request carried a ``base_rev``
+    # the server still holds — then rebuild it from ``segments``.
+    html: str | None
     outline: list[dict[str, Any]]
     statistics: dict[str, Any]
     report: dict[str, Any]
     title: str | None = None
+    # [[key, html | None], …] — one keyed top-level element each; html is None
+    # for a key the client already has (from revision ``base_rev``).
+    segments: list[list[Any]] = Field(default_factory=list)
+    rev: int | None = None
+    mode: str = "full"            # the mode actually used ("quick" may fall back)
+    reason: str | None = None     # why a quick request ran as full
+    main_path: str | None = None  # the render root that was used
+    source_map: dict[str, Any] | None = None  # {files: [...], includes: [[f, line, target]]}
+    timings: dict[str, Any] | None = None
+    chunks: dict[str, Any] | None = None
 
 
 class ContextFile(BaseModel):
@@ -138,6 +150,15 @@ class ProjectConvertRequest(BaseModel):
     filename: str | None = None
     # render this file as the document root; falls back to the detected main
     main_path: str | None = None
+
+
+class ProjectPreviewRequest(ProjectConvertRequest):
+    # "full" re-parses everything; "quick" re-parses only the changed chunks
+    # (falling back to full when that could be inaccurate — see ``reason``).
+    mode: Literal["full", "quick"] = "full"
+    # the ``rev`` of the last preview the client applied: unchanged segments
+    # then come back with html=None
+    base_rev: int | None = None
 
 
 class MarkdownImport(BaseModel):

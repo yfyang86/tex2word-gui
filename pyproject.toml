@@ -19,7 +19,7 @@ classifiers = [
     "Topic :: Text Processing :: Markup :: LaTeX",
 ]
 dependencies = [
-    "tex2word>=1.0.1",
+    "tex2word>=1.0.8",
     "fastapi>=0.110",
     "uvicorn[standard]>=0.29",
     "python-multipart>=0.0.9",
@@ -39,7 +39,7 @@ dev = [
 # PDF/EPS figure rasterisation for the preview (pypdfium2 via tex2word).
 # TikZ figures additionally need a TeX engine (xelatex/pdflatex) on PATH.
 pdf = [
-    "tex2word[pdf]>=1.0.1",
+    "tex2word[pdf]>=1.0.8",
 ]
 
 [build-system]

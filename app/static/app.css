@@ -144,9 +144,26 @@ button { font-family: var(--font); cursor: pointer; border: 1px solid transparen
 /* ── Workspace screen ────────────────────────────────── */
 .workspace { display: flex; }
 .pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.pane.files { width: 230px; flex: none; border-right: 1px solid var(--border); background: var(--bg-shell); }
-.pane.editor { flex: 1; border-right: 1px solid var(--border); background: var(--bg-content); }
+.pane.files { width: 230px; flex: none; background: var(--bg-shell); }
+.pane.editor { flex: 1; min-width: 280px; background: var(--bg-content); }
 .pane.report { width: 380px; flex: none; background: var(--bg-shell); display: flex; flex-direction: column; overflow: hidden; }
+
+/* Collapsible / resizable side panels. A collapsed pane shrinks to a rail
+   with an expand button (and, for the right pane, one button per tab). */
+.pane.files, .pane.report { position: relative; }
+.pane-rail { display: none; }
+.pane.collapsed { width: 38px !important; }
+.pane.collapsed > :not(.pane-rail) { display: none !important; }
+.pane.collapsed > .pane-rail { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0; height: 100%; background: var(--bg-elevated); }
+.rail-label { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); cursor: pointer; margin-top: 6px; user-select: none; }
+.rail-label:hover { color: var(--text-1); }
+.rail-tab.active { background: var(--bg-content); color: var(--text-1); box-shadow: var(--shadow-sm); }
+.pane-resizer { flex: none; width: 5px; margin: 0 -2px; z-index: 5; cursor: col-resize; background: transparent; position: relative; }
+.pane-resizer::after { content: ""; position: absolute; top: 0; bottom: 0; left: 2px; width: 1px; background: var(--border); }
+.pane-resizer:hover::after, .pane-resizer.dragging::after { width: 3px; left: 1px; background: var(--border-hover); }
+.pane-resizer.hidden-edge { cursor: default; pointer-events: none; }
+.workspace.resizing { user-select: none; cursor: col-resize; }
+.workspace.resizing iframe, .workspace.resizing #preview-doc { pointer-events: none; }
 
 .pane-head { height: 44px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid var(--border); background: var(--bg-elevated); }
 .pane-title { font-size: 13px; font-weight: 600; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -309,6 +326,22 @@ button { font-family: var(--font); cursor: pointer; border: 1px solid transparen
 .hl-link { color: var(--accent-service); }
 .hl-quote { color: var(--text-3); }
 .hl-list { color: var(--accent-service); font-weight: 600; }
+.hl-undef { text-decoration: underline wavy var(--danger); text-decoration-skip-ink: none; text-underline-offset: 2px; }
+
+/* editor completion popup */
+.ed-ac { position: absolute; z-index: 10; min-width: 300px; max-width: min(560px, 92%); max-height: 264px; overflow-y: auto;
+  background: var(--bg-content); border: 1px solid var(--border); border-radius: 9px; box-shadow: var(--shadow-menu); padding: 4px; font-size: 12px; }
+.ed-ac-item { display: flex; align-items: baseline; gap: 8px; padding: 4px 8px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+.ed-ac-item.active, .ed-ac-item:hover { background: var(--hover-bg); }
+.ed-ac-item.active { box-shadow: inset 2px 0 0 var(--brand); }
+.ed-ac-kind { flex: none; width: 38px; text-align: center; font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-3); background: var(--bg-elevated); border-radius: 4px; padding: 1px 0; }
+.ed-ac-kind.k-label, .ed-ac-kind.k-cite { color: var(--accent-service); }
+.ed-ac-kind.k-env { color: var(--accent-content); }
+.ed-ac-kind.k-macro { color: var(--success); }
+.ed-ac-label { font-family: var(--mono); color: var(--text-1); flex: none; }
+.ed-ac-label b { color: var(--brand); font-weight: 700; }
+.ed-ac-detail { color: var(--text-3); overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+.ed-ac-src { color: var(--text-4); font-family: var(--mono); font-size: 10.5px; flex: none; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
 
 /* binary asset preview in the editor pane */
 .asset-view { flex: 1; min-height: 0; overflow: auto; background: var(--bg-shell); display: flex; align-items: center; justify-content: center; padding: 20px; }
@@ -325,6 +358,19 @@ button { font-family: var(--font); cursor: pointer; border: 1px solid transparen
 .split.dragging { user-select: none; }
 .preview-head { height: 34px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 14px; border-bottom: 1px solid var(--border); background: var(--bg-elevated); }
 .preview-stale { font-size: 10px; color: var(--warning); background: var(--warning-bg); padding: 1px 6px; border-radius: 4px; }
+.preview-status { font-family: var(--mono); font-size: 10.5px; color: var(--text-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.preview-status.fell-back { color: var(--text-3); text-decoration: underline dotted; cursor: help; }
+.seg-toggle { display: inline-flex; background: var(--bg-shell); border: 1px solid var(--border); border-radius: 7px; padding: 2px; gap: 2px; flex: none; }
+.seg-toggle button { border: none; background: none; font-size: 11px; font-weight: 500; color: var(--text-3); padding: 2px 8px; border-radius: 5px; cursor: pointer; }
+.seg-toggle button:hover { color: var(--text-1); }
+.seg-toggle button.active { background: var(--bg-content); color: var(--text-1); box-shadow: var(--shadow-sm); }
+/* sync anchors are invisible; marker-only paragraphs take no space */
+.preview-doc .sl { display: inline; }
+.preview-doc p.srcmark { margin: 0 auto; height: 0; line-height: 0; overflow: hidden; }
+.preview-doc .sync-flash { animation: syncflash 1.2s ease-out; border-radius: 4px; }
+@keyframes syncflash { 0% { background: var(--warning-bg); box-shadow: 0 0 0 6px var(--warning-bg); } 100% { background: transparent; box-shadow: 0 0 0 6px transparent; } }
+.line-flash { position: absolute; left: 0; right: 0; height: 1.7em; font-size: 12.5px; pointer-events: none; z-index: 2; background: var(--warning-bg); opacity: .8; animation: linefade 1.1s ease-out forwards; }
+@keyframes linefade { to { opacity: 0; } }
 
 /* ── Report panel ────────────────────────────────────── */
 .report-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px; }
