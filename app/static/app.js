@@ -17,7 +17,7 @@ const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt
 const codeify = (s) => esc(s).replace(/(\\[A-Za-z@]+|\$[^$]*\$)/g, "<code>$1</code>");
 
 // ── Lightweight syntax highlighting (overlay behind the textarea) ──
-const TEX_RE = /(%[^\n]*)|(\$\$[\s\S]*?\$\$|\$(?:\\.|[^$\\\n])*\$)|(\\[a-zA-Z@]+\*?|\\.)|([{}\[\]])/g;
+const TEX_RE = /(%[^\n]*)|(\$\$[\s\S]*?\$\$|\$(?:\\.|[^$\\\n])*\$)|(\\(?:[a-zA-Z]*ref|[cC]ref|labelcref|autoref|[a-zA-Z]*cite[a-zA-Z]*)\*?(?:\[[^\]\n]*\]){0,2}\{[^{}\n]*\})|(\\[a-zA-Z@]+\*?|\\.)|([{}\[\]])/g;
 const MD_RE = /(^#{1,6} .*)|(^```[\s\S]*?^```|`[^`\n]+`)|(\*\*[^*\n]+\*\*|__[^_\n]+__)|(\*[^*\n]+\*|_[^_\n]+_)|(\$[^$\n]+\$)|(^\s*(?:[-*+]|\d+\.) )|(\[[^\]\n]*\]\([^)\n]*\))|(^>.*)/gm;
 
 function highlightWith(text, re, classes) {
@@ -27,11 +27,28 @@ function highlightWith(text, re, classes) {
     out += esc(text.slice(last, m.index));
     let cls = "";
     for (let i = 1; i < m.length; i++) { if (m[i] !== undefined) { cls = classes[i - 1]; break; } }
-    out += `<span class="${cls}">${esc(m[0])}</span>`;
+    out += typeof cls === "function" ? cls(m[0]) : `<span class="${cls}">${esc(m[0])}</span>`;
     last = m.index + m[0].length;
     if (m[0].length === 0) re.lastIndex++;  // guard against zero-width loops
   }
   return out + esc(text.slice(last));
+}
+
+// \ref{…}/\cite{…}: keys that exist nowhere in the project get a wavy underline.
+function highlightRefCmd(tok) {
+  const open = tok.indexOf("{");
+  const head = tok.slice(0, open), body = tok.slice(open + 1, -1);
+  const isCite = /cite/i.test(head.match(/^\\[a-zA-Z]*/)[0]);
+  const keys = state.cIndex ? TexComplete.knownKeys(state.cIndex) : null;
+  const known = keys && (isCite ? keys.cites : keys.labels);
+  const name = head.match(/^\\[a-zA-Z]*\*?/)[0];
+  const opts = head.slice(name.length);
+  const parts = body.split(/(,)/).map((p) => {
+    const k = p.trim();
+    if (p === "," || !k || !known || known.has(k) || (isCite && k === "*")) return esc(p);
+    return `<span class="hl-undef">${esc(p)}</span>`;
+  }).join("");
+  return `<span class="hl-cmd">${esc(name)}</span>${esc(opts)}<span class="hl-brace">{</span>${parts}<span class="hl-brace">}</span>`;
 }
 
 function langFor(path) {
@@ -43,7 +60,7 @@ function langFor(path) {
 }
 
 function highlightCode(text, lang) {
-  if (lang === "tex") return highlightWith(text, TEX_RE, ["hl-comment", "hl-math", "hl-cmd", "hl-brace"]);
+  if (lang === "tex") return highlightWith(text, TEX_RE, ["hl-comment", "hl-math", highlightRefCmd, "hl-cmd", "hl-brace"]);
   if (lang === "md") return highlightWith(text, MD_RE, ["hl-head", "hl-code", "hl-bold", "hl-italic", "hl-math", "hl-list", "hl-link", "hl-quote"]);
   return esc(text);
 }
@@ -287,6 +304,204 @@ function headingSyncPreviewToEditor(e) {
   _scrollEditorToLine(line);
 }
 
+// ── Editor autocompletion (engine: complete.js) ─────────
+// Popup at the caret with context-aware candidates; snippets with tabstops
+// (Tab / Shift+Tab to move, Esc to leave); Enter after \begin{env} adds the
+// matching \end{env}. Ctrl+Space opens the list on demand.
+const MRU_KEY = "tw_ac_mru";
+
+function loadMru() {
+  try { return JSON.parse(localStorage.getItem(MRU_KEY) || "{}") || {}; } catch { return {}; }
+}
+
+function bumpMru(item) {
+  const k = item.kind + ":" + item.label;
+  state.acMru[k] = (state.acMru[k] || 0) + 1;
+  try { localStorage.setItem(MRU_KEY, JSON.stringify(state.acMru)); } catch { /* ignore */ }
+}
+
+// Rebuild the project symbol index (labels, bib keys, macros, files) soon.
+function refreshCompletionIndex(now) {
+  clearTimeout(state.cIndexTimer);
+  const build = () => {
+    const files = {};
+    for (const f of state.files || []) files[f.path] = f.is_binary ? "" : (state.contents[f.path] ?? "");
+    state.cIndex = TexComplete.buildIndex(files);
+    updateHighlight();
+  };
+  if (now) build(); else state.cIndexTimer = setTimeout(build, 400);
+}
+
+function _caretCoords(ta, idx) {
+  _measureLineTop(ta, 0);  // sizes the shared mirror like the textarea
+  _mirror.textContent = ta.value.slice(0, idx);
+  const marker = document.createElement("span");
+  marker.textContent = "​";
+  _mirror.appendChild(marker);
+  return { left: marker.offsetLeft, top: marker.offsetTop, height: marker.offsetHeight || 20 };
+}
+
+function edInsert(from, to, text) {
+  const ta = $("#source");
+  state.edInserting = true;
+  ta.focus();
+  ta.setSelectionRange(from, to);
+  let ok = false;
+  try { ok = document.execCommand("insertText", false, text); } catch { ok = false; }
+  if (!ok) {  // keeps working where execCommand is unavailable (no native undo then)
+    ta.setRangeText(text, from, to, "end");
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  state.edInserting = false;
+}
+
+function edAcUpdate(force) {
+  const ta = $("#source");
+  if (!state.activeFile || isBinary(state.activeFile) || langFor(state.activeFile) !== "tex") return edAcClose();
+  if (!state.cIndex) refreshCompletionIndex(true);
+  const caret = ta.selectionStart;
+  const res = TexComplete.complete(ta.value, caret, state.cIndex,
+                                   { file: state.activeFile, mru: state.acMru, limit: 50 });
+  if (!res || !res.items.length) return edAcClose();
+  // commands open after the first letter (or on demand); brace arguments at once
+  if (!force && !state.edAc && res.kind === "cmd" && !res.query) return edAcClose();
+  if (res.items.length === 1 && res.items[0].label === (res.kind === "cmd" ? "\\" : "") + res.query && !force) return edAcClose();
+  state.edAc = { ...res, index: 0 };
+  edAcRender();
+}
+
+function edAcRender() {
+  const box = $("#ed-ac"), ac = state.edAc, ta = $("#source");
+  if (!ac) { box.hidden = true; return; }
+  const q = ac.query.toLowerCase();
+  const mark = (label) => {
+    const plain = label.replace(/^\\/, "");
+    const i = q ? plain.toLowerCase().indexOf(q) : -1;
+    const pre = label.length - plain.length;
+    if (i < 0) return esc(label);
+    return esc(label.slice(0, pre + i)) + "<b>" + esc(label.slice(pre + i, pre + i + q.length)) + "</b>" + esc(label.slice(pre + i + q.length));
+  };
+  box.innerHTML = ac.items.map((it, i) =>
+    `<div class="ed-ac-item${i === ac.index ? " active" : ""}" data-i="${i}" role="option">` +
+    `<span class="ed-ac-kind k-${esc(it.kind)}">${esc(it.kind === "macro" ? "cmd" : it.kind)}</span>` +
+    `<span class="ed-ac-label">${mark(it.label)}</span>` +
+    `<span class="ed-ac-detail">${esc(it.detail || "")}</span>` +
+    (it.source ? `<span class="ed-ac-src">${esc(it.source)}</span>` : "") + `</div>`).join("");
+  box.querySelectorAll(".ed-ac-item").forEach((el) =>
+    el.addEventListener("mousedown", (e) => { e.preventDefault(); edAcAccept(+el.dataset.i); }));
+  const c = _caretCoords(ta, ac.from);
+  const wrap = $("#code-wrap").getBoundingClientRect();
+  box.hidden = false;
+  const left = Math.max(4, Math.min(c.left - ta.scrollLeft, wrap.width - box.offsetWidth - 8));
+  let top = c.top - ta.scrollTop + c.height + 2;
+  if (top + box.offsetHeight > wrap.height - 4) top = Math.max(4, c.top - ta.scrollTop - box.offsetHeight - 2);
+  box.style.left = left + "px";
+  box.style.top = top + "px";
+  const act = box.querySelector(".ed-ac-item.active");
+  if (act) act.scrollIntoView({ block: "nearest" });
+}
+
+function edAcClose() { state.edAc = null; const b = $("#ed-ac"); if (b) b.hidden = true; }
+
+function edAcAccept(i) {
+  const ac = state.edAc;
+  if (!ac) return;
+  const it = ac.items[i];
+  edAcClose();
+  bumpMru(it);
+  const ta = $("#source");
+  const lineStart = ta.value.lastIndexOf("\n", ac.from - 1) + 1;
+  const indent = /^[ \t]*/.exec(ta.value.slice(lineStart))[0];
+  const snip = TexComplete.expandSnippet(it.insert + (ac.close || ""));
+  const text = TexComplete.indentSnippet(snip.text, indent);
+  // offsets shift by the indentation added before each stop
+  const shift = (pos) => pos + (snip.text.slice(0, pos).split("\n").length - 1) * indent.length;
+  edInsert(ac.from, ac.to, text);
+  const stops = snip.stops.map((st) => ({ start: ac.from + shift(st.start), end: ac.from + shift(st.end) }));
+  const final = ac.from + shift(snip.final);
+  if (stops.length) {
+    state.snippet = { stops, cur: -1, len: ta.value.length, final };
+    edSnippetGo(1);
+  } else {
+    state.snippet = null;
+    ta.setSelectionRange(final, final);
+    edAcUpdate(false);  // e.g. \ref → straight into the label list
+  }
+}
+
+function edSnippetGo(dir) {
+  const sn = state.snippet, ta = $("#source");
+  if (!sn) return;
+  sn.cur += dir;
+  if (sn.cur < 0) sn.cur = 0;
+  if (sn.cur >= sn.stops.length) {  // past the last stop: leave the snippet
+    ta.setSelectionRange(sn.final, sn.final);
+    state.snippet = null;
+    return;
+  }
+  const st = sn.stops[sn.cur];
+  ta.setSelectionRange(st.start, st.end);
+  edAcUpdate(false);  // a stop inside \cite{…}/\ref{…} lists keys right away
+}
+
+// Keep snippet stops aligned with edits made inside the current stop.
+function edSnippetTrack() {
+  const sn = state.snippet, ta = $("#source");
+  if (!sn || sn.cur < 0) return;
+  const delta = ta.value.length - sn.len;
+  sn.len = ta.value.length;
+  const st = sn.stops[sn.cur];
+  const caret = ta.selectionStart;
+  if (caret < st.start || caret > st.end + Math.max(0, delta)) { state.snippet = null; return; }
+  st.end = Math.max(st.start, st.end + delta);
+  for (let k = sn.cur + 1; k < sn.stops.length; k++) { sn.stops[k].start += delta; sn.stops[k].end += delta; }
+  sn.final += delta;
+}
+
+function edOnInput(e) {
+  if (state.edInserting) return;
+  edSnippetTrack();
+  const t = e && e.inputType;
+  if (state.edAc || (t && (t.startsWith("insert") || t.startsWith("delete")))) {
+    const d = e && e.data;
+    if (state.edAc || (d && /[a-zA-Z@{,]/.test(d.slice(-1)))) edAcUpdate(false);
+  }
+  refreshCompletionIndex(false);
+}
+
+function edKeydown(e) {
+  const ac = state.edAc, ta = $("#source");
+  if ((e.ctrlKey || e.metaKey) && e.code === "Space") { e.preventDefault(); return edAcUpdate(true); }
+  if (ac) {
+    const n = ac.items.length;
+    if (e.key === "ArrowDown" || (e.ctrlKey && e.key === "n")) { e.preventDefault(); ac.index = (ac.index + 1) % n; return edAcRender(); }
+    if (e.key === "ArrowUp" || (e.ctrlKey && e.key === "p")) { e.preventDefault(); ac.index = (ac.index - 1 + n) % n; return edAcRender(); }
+    if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); return edAcAccept(ac.index); }
+    if (e.key === "Escape") { e.preventDefault(); return edAcClose(); }
+    if (e.key === "ArrowLeft" || e.key === "ArrowRight" || e.key === "Home" || e.key === "End") edAcClose();
+  }
+  if (state.snippet) {
+    if (e.key === "Tab") { e.preventDefault(); return edSnippetGo(e.shiftKey ? -1 : 1); }
+    if (e.key === "Escape") { state.snippet = null; return; }
+  }
+  // Enter right after \begin{env}: add the matching \end{env} below
+  if (e.key === "Enter" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey &&
+      langFor(state.activeFile) === "tex" && ta.selectionStart === ta.selectionEnd) {
+    const caret = ta.selectionStart, v = ta.value;
+    const lineStart = v.lastIndexOf("\n", caret - 1) + 1;
+    const line = v.slice(lineStart, caret);
+    const m = /\\begin\{([^}]+)\}(?:\[[^\]]*\]|\{[^}]*\})*\s*$/.exec(line);
+    const rest = v.slice(caret, v.indexOf("\n", caret) < 0 ? v.length : v.indexOf("\n", caret));
+    if (m && !rest.trim() && !TexComplete.inComment(v, caret) && TexComplete.needsEnd(v, caret, m[1])) {
+      e.preventDefault();
+      const indent = /^[ \t]*/.exec(line)[0];
+      edInsert(caret, caret, `\n${indent}  \n${indent}\\end{${m[1]}}`);
+      const pos = caret + 1 + indent.length + 2;
+      ta.setSelectionRange(pos, pos);
+    }
+  }
+}
+
 // ── App state ───────────────────────────────────────────
 const state = {
   project: null,   // detail object {id, name, main_path, files: [...]}
@@ -318,6 +533,12 @@ const state = {
   conversation: null, // active chat session {id, messages:[...]}
   collapsed: new Set(), // collapsed folder paths in the file tree
   layout: null,    // side panels {files,report: {width, collapsed}} (localStorage)
+  cIndex: null,    // editor completion index (TexComplete.buildIndex)
+  cIndexTimer: null,
+  edAc: null,      // open editor completion popup {items, index, from, to, kind}
+  edInserting: false,
+  snippet: null,   // active snippet {stops: [{start,end}], cur, len, final}
+  acMru: loadMru(),// accepted completions → ranking boost
   authEnabled: false,
   token: localStorage.getItem("tw_token") || null,
   user: null,      // {username, role}
@@ -409,14 +630,18 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#btn-save").addEventListener("click", () => saveActive(true));
   $("#btn-save-settings").addEventListener("click", saveSettings);
   $("#btn-convert").addEventListener("click", convertProject);
-  $("#source").addEventListener("input", () => {
+  $("#source").addEventListener("input", (e) => {
     if (!state.activeFile) return;
     state.contents[state.activeFile] = $("#source").value;
     updateHighlight();
     setDirty(true);
     markPreviewStale();
+    edOnInput(e);
   });
-  $("#source").addEventListener("scroll", syncHighlightScroll);
+  $("#source").addEventListener("keydown", edKeydown);
+  $("#source").addEventListener("blur", () => setTimeout(edAcClose, 150));
+  $("#source").addEventListener("mousedown", () => { edAcClose(); });
+  $("#source").addEventListener("scroll", () => { syncHighlightScroll(); edAcClose(); });
   // rough source ⇄ preview location sync (click the editor / click the preview)
   $("#source").addEventListener("click", syncEditorToPreview);
   $("#source").addEventListener("keyup", (e) => {
@@ -776,6 +1001,8 @@ async function openProject(id) {
   applySettings(p.settings);
   resetPreviewState();
   state.rootFile = p.main_path;
+  state.cIndex = null;
+  edAcClose(); state.snippet = null;
   state.lastReport = null;
   setCrumb(p.name);
   setScreen("workspace");
@@ -829,6 +1056,7 @@ function countTreeFiles(node) {
 }
 
 function renderFiles() {
+  refreshCompletionIndex(false);  // the file set may have changed
   const list = $("#file-list");
   list.innerHTML = "";
   renderTree(list, buildFileTree(state.files || []), 0);
@@ -909,6 +1137,7 @@ async function openFile(path, opts) {
     $("#source").value = ""; updateHighlight(); return;
   }
   if (state.dirty && state.activeFile && state.activeFile !== path) await saveActive(false);
+  edAcClose(); state.snippet = null;
   state.activeFile = path;
   $("#editor-tab").textContent = path;
   $("#btn-import-tex").hidden = langFor(path) !== "md";  // Markdown → "Import to TeX"

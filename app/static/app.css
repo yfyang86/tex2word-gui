@@ -326,6 +326,22 @@ button { font-family: var(--font); cursor: pointer; border: 1px solid transparen
 .hl-link { color: var(--accent-service); }
 .hl-quote { color: var(--text-3); }
 .hl-list { color: var(--accent-service); font-weight: 600; }
+.hl-undef { text-decoration: underline wavy var(--danger); text-decoration-skip-ink: none; text-underline-offset: 2px; }
+
+/* editor completion popup */
+.ed-ac { position: absolute; z-index: 10; min-width: 300px; max-width: min(560px, 92%); max-height: 264px; overflow-y: auto;
+  background: var(--bg-content); border: 1px solid var(--border); border-radius: 9px; box-shadow: var(--shadow-menu); padding: 4px; font-size: 12px; }
+.ed-ac-item { display: flex; align-items: baseline; gap: 8px; padding: 4px 8px; border-radius: 6px; cursor: pointer; white-space: nowrap; }
+.ed-ac-item.active, .ed-ac-item:hover { background: var(--hover-bg); }
+.ed-ac-item.active { box-shadow: inset 2px 0 0 var(--brand); }
+.ed-ac-kind { flex: none; width: 38px; text-align: center; font-size: 9.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; color: var(--text-3); background: var(--bg-elevated); border-radius: 4px; padding: 1px 0; }
+.ed-ac-kind.k-label, .ed-ac-kind.k-cite { color: var(--accent-service); }
+.ed-ac-kind.k-env { color: var(--accent-content); }
+.ed-ac-kind.k-macro { color: var(--success); }
+.ed-ac-label { font-family: var(--mono); color: var(--text-1); flex: none; }
+.ed-ac-label b { color: var(--brand); font-weight: 700; }
+.ed-ac-detail { color: var(--text-3); overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
+.ed-ac-src { color: var(--text-4); font-family: var(--mono); font-size: 10.5px; flex: none; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
 
 /* binary asset preview in the editor pane */
 .asset-view { flex: 1; min-height: 0; overflow: auto; background: var(--bg-shell); display: flex; align-items: center; justify-content: center; padding: 20px; }
