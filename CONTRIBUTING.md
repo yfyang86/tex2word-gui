@@ -39,12 +39,24 @@ Open <http://localhost:8000>. Auth is off by default; to enable it see
 ## Tests — the bar for every PR
 
 ```bash
-uv run pytest -q            # the full suite must pass
-node --check app/static/app.js   # frontend JS must parse
+uv run pytest -q                    # the full suite must pass
+node --check app/static/*.js        # frontend JS must parse
+node --test tests/js/*.test.js      # frontend engine unit tests
 ```
 
-Both are enforced by CI (`.github/workflows/ci.yml`). A pull request should not
-be merged red.
+All three are enforced by CI (`.github/workflows/ci.yml`). A pull request should
+not be merged red.
+
+UI changes should also pass the browser suite, which boots the app on a temp
+database and drives it with Playwright's Chromium:
+
+```bash
+NODE_PATH=$(npm root -g) node tests/e2e/run.js        # all specs
+NODE_PATH=$(npm root -g) node tests/e2e/run.js sync   # one spec
+```
+
+It needs `playwright` resolvable from node and a Chromium build
+(`PW_CHROMIUM=/path/to/chrome` to choose one); it is not run in CI yet.
 
 - New behaviour needs tests. Bug fixes need a **regression test** that fails
   before the fix (see `tests/test_md_math.py` for the pattern).

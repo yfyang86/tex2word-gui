@@ -17,7 +17,7 @@ const esc = (s) => String(s).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt
 const codeify = (s) => esc(s).replace(/(\\[A-Za-z@]+|\$[^$]*\$)/g, "<code>$1</code>");
 
 // ── Lightweight syntax highlighting (overlay behind the textarea) ──
-const TEX_RE = /(%[^\n]*)|(\$\$[\s\S]*?\$\$|\$(?:\\.|[^$\\\n])*\$)|(\\[a-zA-Z@]+\*?|\\.)|([{}\[\]])/g;
+const TEX_RE = /(%[^\n]*)|(\$\$[\s\S]*?\$\$|\$(?:\\.|[^$\\\n])*\$)|(\\(?:[a-zA-Z]*ref|[cC]ref|labelcref|autoref|[a-zA-Z]*cite[a-zA-Z]*)\*?(?:\[[^\]\n]*\]){0,2}\{[^{}\n]*\})|(\\[a-zA-Z@]+\*?|\\.)|([{}\[\]])/g;
 const MD_RE = /(^#{1,6} .*)|(^```[\s\S]*?^```|`[^`\n]+`)|(\*\*[^*\n]+\*\*|__[^_\n]+__)|(\*[^*\n]+\*|_[^_\n]+_)|(\$[^$\n]+\$)|(^\s*(?:[-*+]|\d+\.) )|(\[[^\]\n]*\]\([^)\n]*\))|(^>.*)/gm;
 
 function highlightWith(text, re, classes) {
@@ -27,11 +27,28 @@ function highlightWith(text, re, classes) {
     out += esc(text.slice(last, m.index));
     let cls = "";
     for (let i = 1; i < m.length; i++) { if (m[i] !== undefined) { cls = classes[i - 1]; break; } }
-    out += `<span class="${cls}">${esc(m[0])}</span>`;
+    out += typeof cls === "function" ? cls(m[0]) : `<span class="${cls}">${esc(m[0])}</span>`;
     last = m.index + m[0].length;
     if (m[0].length === 0) re.lastIndex++;  // guard against zero-width loops
   }
   return out + esc(text.slice(last));
+}
+
+// \ref{…}/\cite{…}: keys that exist nowhere in the project get a wavy underline.
+function highlightRefCmd(tok) {
+  const open = tok.indexOf("{");
+  const head = tok.slice(0, open), body = tok.slice(open + 1, -1);
+  const isCite = /cite/i.test(head.match(/^\\[a-zA-Z]*/)[0]);
+  const keys = state.cIndex ? TexComplete.knownKeys(state.cIndex) : null;
+  const known = keys && (isCite ? keys.cites : keys.labels);
+  const name = head.match(/^\\[a-zA-Z]*\*?/)[0];
+  const opts = head.slice(name.length);
+  const parts = body.split(/(,)/).map((p) => {
+    const k = p.trim();
+    if (p === "," || !k || !known || known.has(k) || (isCite && k === "*")) return esc(p);
+    return `<span class="hl-undef">${esc(p)}</span>`;
+  }).join("");
+  return `<span class="hl-cmd">${esc(name)}</span>${esc(opts)}<span class="hl-brace">{</span>${parts}<span class="hl-brace">}</span>`;
 }
 
 function langFor(path) {
@@ -43,7 +60,7 @@ function langFor(path) {
 }
 
 function highlightCode(text, lang) {
-  if (lang === "tex") return highlightWith(text, TEX_RE, ["hl-comment", "hl-math", "hl-cmd", "hl-brace"]);
+  if (lang === "tex") return highlightWith(text, TEX_RE, ["hl-comment", "hl-math", highlightRefCmd, "hl-cmd", "hl-brace"]);
   if (lang === "md") return highlightWith(text, MD_RE, ["hl-head", "hl-code", "hl-bold", "hl-italic", "hl-math", "hl-list", "hl-link", "hl-quote"]);
   return esc(text);
 }
@@ -144,17 +161,96 @@ function _measureLineTop(ta, line) {
   return marker.offsetTop;
 }
 
-function _scrollEditorToLine(line) {
+function _scrollEditorToLine(line, flash) {
   const ta = $("#source");
   line = Math.max(0, line);
   const idx = _lineStartIndex(ta.value, line);
   try { ta.focus({ preventScroll: true }); ta.setSelectionRange(idx, idx); } catch (_) {}
-  ta.scrollTop = Math.max(0, _measureLineTop(ta, line) - ta.clientHeight * 0.3);
+  const top = _measureLineTop(ta, line);
+  ta.scrollTop = Math.max(0, top - ta.clientHeight * 0.3);
   syncHighlightScroll();
+  if (flash) flashEditorLine(top - ta.scrollTop);
 }
 
-// Editor caret → scroll the preview to the matching place.
-function syncEditorToPreview() {
+// A transient band over the target line (no selection: typing stays safe).
+function flashEditorLine(y) {
+  const wrap = $("#code-wrap");
+  const band = document.createElement("div");
+  band.className = "line-flash";
+  band.style.top = y + "px";
+  wrap.appendChild(band);
+  setTimeout(() => band.remove(), 1100);
+}
+
+// Sync anchors (data-src="fileIndex:line") in the preview → [{el, file, line}].
+function previewAnchors() {
+  if (state.anchors) return state.anchors;
+  const files = (state.preview && state.preview.source_map && state.preview.source_map.files) || [];
+  state.anchors = [...$("#preview-doc").querySelectorAll("[data-src]")]
+    .map((el) => ({ el, ...TexSync.parseSrc(el.dataset.src, files) }))
+    .filter((a) => a.file != null);
+  return state.anchors;
+}
+
+function hasSourceMap() {
+  return !!(state.preview && state.preview.source_map && previewAnchors().length);
+}
+
+function _withY(anchors, container) {
+  const base = container.getBoundingClientRect().top - container.scrollTop;
+  return anchors.map((a) => ({ ...a, y: a.el.getBoundingClientRect().top - base }));
+}
+
+function flashPreviewBlock(el) {
+  const pv = $("#preview-doc");
+  let seg = el;
+  while (seg && seg.parentElement !== pv) seg = seg.parentElement;
+  if (!seg) return;
+  seg.classList.remove("sync-flash"); void seg.offsetWidth;  // restart the animation
+  seg.classList.add("sync-flash");
+  setTimeout(() => seg.classList.remove("sync-flash"), 1200);
+}
+
+// Editor caret → preview, via the source map (works across \input files).
+function syncEditorToPreview(e) {
+  if (!state.previewVisible || !state.preview || isBinary(state.activeFile)) return;
+  if (!hasSourceMap()) return headingSyncEditorToPreview();
+  const pv = $("#preview-doc"), ta = $("#source");
+  const files = state.preview.source_map.files;
+  const includes = (state.preview.source_map.includes || [])
+    .map(([f, line, t]) => ({ file: files[f], line, target: files[t] }));
+  const locate = () => TexSync.editorToPreview(_withY(previewAnchors(), pv),
+                                                state.activeFile, _caretLine(ta) + 1, includes);
+  const hit = locate();
+  if (!hit) return;
+  pv.scrollTo({ top: Math.max(0, hit.y - pv.clientHeight * 0.3) });
+  // off-screen blocks may only get their real size once scrolled into view
+  requestAnimationFrame(() => {
+    const again = locate();
+    if (again) pv.scrollTo({ top: Math.max(0, again.y - pv.clientHeight * 0.3) });
+    if (e && e.type === "click") flashPreviewBlock(hit.anchor.el);
+  });
+}
+
+// Click in the preview → open the right file at the right line.
+async function syncPreviewToEditor(e) {
+  if (!state.preview) return;
+  if (e.target.closest("a[href]")) return;  // let links (refs) behave as links
+  if (!hasSourceMap()) return headingSyncPreviewToEditor(e);
+  const pv = $("#preview-doc");
+  const y = e.clientY - pv.getBoundingClientRect().top + pv.scrollTop;
+  const hit = TexSync.previewToEditor(_withY(previewAnchors(), pv), y);
+  if (!hit) return;
+  if (hit.file !== state.activeFile) {
+    if (!fileMeta(hit.file)) return;
+    await openFile(hit.file, { line: hit.line });
+  } else {
+    _scrollEditorToLine(hit.line - 1, true);
+  }
+}
+
+// Fallback without a source map: match source headings to preview headings.
+function headingSyncEditorToPreview() {
   if (!state.previewVisible || !state.preview || isBinary(state.activeFile)) return;
   const pv = $("#preview-doc"), ta = $("#source");
   const line = _caretLine(ta);
@@ -181,8 +277,7 @@ function syncEditorToPreview() {
   pv.scrollTo({ top: Math.max(0, target - 12), behavior: "smooth" });
 }
 
-// Click in the preview → scroll the editor to the matching source line.
-function syncPreviewToEditor(e) {
+function headingSyncPreviewToEditor(e) {
   if (!state.preview || isBinary(state.activeFile)) return;
   const pv = $("#preview-doc"), ta = $("#source");
   const pairs = _syncPairs()
@@ -209,6 +304,361 @@ function syncPreviewToEditor(e) {
   _scrollEditorToLine(line);
 }
 
+// ── Editor autocompletion (engine: complete.js) ─────────
+// Popup at the caret with context-aware candidates; snippets with tabstops
+// (Tab / Shift+Tab to move, Esc to leave); Enter after \begin{env} adds the
+// matching \end{env}. Ctrl+Space opens the list on demand.
+const MRU_KEY = "tw_ac_mru";
+
+function loadMru() {
+  try { return JSON.parse(localStorage.getItem(MRU_KEY) || "{}") || {}; } catch { return {}; }
+}
+
+function bumpMru(item) {
+  const k = item.kind + ":" + item.label;
+  state.acMru[k] = (state.acMru[k] || 0) + 1;
+  try { localStorage.setItem(MRU_KEY, JSON.stringify(state.acMru)); } catch { /* ignore */ }
+}
+
+// Rebuild the project symbol index (labels, bib keys, macros, files) soon.
+function refreshCompletionIndex(now) {
+  clearTimeout(state.cIndexTimer);
+  const build = () => {
+    const files = {};
+    for (const f of state.files || []) files[f.path] = f.is_binary ? "" : (state.contents[f.path] ?? "");
+    state.cIndex = TexComplete.buildIndex(files);
+    updateHighlight();
+  };
+  if (now) build(); else state.cIndexTimer = setTimeout(build, 400);
+}
+
+function _caretCoords(ta, idx) {
+  _measureLineTop(ta, 0);  // sizes the shared mirror like the textarea
+  _mirror.textContent = ta.value.slice(0, idx);
+  const marker = document.createElement("span");
+  marker.textContent = "​";
+  _mirror.appendChild(marker);
+  return { left: marker.offsetLeft, top: marker.offsetTop, height: marker.offsetHeight || 20 };
+}
+
+function edInsert(from, to, text) {
+  const ta = $("#source");
+  state.edInserting = true;
+  ta.focus();
+  ta.setSelectionRange(from, to);
+  let ok = false;
+  try { ok = document.execCommand("insertText", false, text); } catch { ok = false; }
+  if (!ok) {  // keeps working where execCommand is unavailable (no native undo then)
+    ta.setRangeText(text, from, to, "end");
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  state.edInserting = false;
+}
+
+// Key map of the editor (textarea #source). One place decides every key:
+//
+//   popup open      ↑/↓ or Ctrl+P/N move · PgUp/PgDn jump · Tab or Enter accept
+//                   Shift+Tab move up · Esc close · ←/→/Home/End close and move
+//   snippet active  Tab / Shift+Tab next / previous stop · Esc leave the snippet
+//   otherwise       Tab: indent a multi-line selection, expand an environment
+//                   name typed alone on a line ("itemize" → \begin…\end),
+//                   complete a unique match or open the list, else indent
+//                   Shift+Tab outdent · Ctrl/Cmd+Space open the list
+//                   Esc then Tab: move focus out of the editor (no keyboard trap)
+//                   Enter after \begin{env}: add the matching \end{env}
+// Modified Tab (Ctrl/Cmd/Alt+Tab) and IME composition are never intercepted.
+const INDENT = "  ";
+
+function edAcUpdate(force, argsOnly) {
+  const ta = $("#source");
+  if (!state.activeFile || isBinary(state.activeFile) || langFor(state.activeFile) !== "tex") return edAcClose();
+  if (!state.cIndex) refreshCompletionIndex(true);
+  const caret = ta.selectionStart;
+  const res = TexComplete.complete(ta.value, caret, state.cIndex,
+                                   { file: state.activeFile, mru: state.acMru, limit: 50 });
+  if (!res || !res.items.length || (argsOnly && res.kind === "cmd")) return edAcClose();
+  // commands open after the first letter (or on demand); brace arguments at once
+  if (!force && !state.edAc && res.kind === "cmd" && !res.query) return edAcClose();
+  if (res.items.length === 1 && res.items[0].label === (res.kind === "cmd" ? "\\" : "") + res.query && !force) return edAcClose();
+  state.edAc = { ...res, index: 0 };
+  edAcRender();
+}
+
+function symbolIcon(id) {
+  return `<svg class="sym-svg" aria-hidden="true"><use href="/static/symbols.svg#${esc(id)}"/></svg>`;
+}
+
+function edAcRender() {
+  const box = $("#ed-ac"), ac = state.edAc, ta = $("#source");
+  if (!ac) { box.hidden = true; return; }
+  const q = ac.query.toLowerCase();
+  const mark = (label) => {
+    const plain = label.replace(/^\\/, "");
+    const i = q ? plain.toLowerCase().indexOf(q) : -1;
+    const pre = label.length - plain.length;
+    if (i < 0) return esc(label);
+    return esc(label.slice(0, pre + i)) + "<b>" + esc(label.slice(pre + i, pre + i + q.length)) + "</b>" + esc(label.slice(pre + i + q.length));
+  };
+  const icon = (it) => it.sym ? symbolIcon(it.sym)
+    : it.swatch ? `<span class="ed-ac-swatch" style="background:${esc(it.swatch)}"></span>` : "";
+  box.innerHTML = ac.items.map((it, i) =>
+    `<div class="ed-ac-item${i === ac.index ? " active" : ""}" data-i="${i}" role="option">` +
+    `<span class="ed-ac-kind k-${esc(it.kind)}">${esc(it.kind === "macro" ? "cmd" : it.kind === "newlabel" ? "label" : it.kind)}</span>` +
+    `<span class="ed-ac-icon">${icon(it)}</span>` +
+    `<span class="ed-ac-label">${mark(it.label)}</span>` +
+    `<span class="ed-ac-detail">${esc(it.detail || "")}</span>` +
+    (it.source ? `<span class="ed-ac-src">${esc(it.source)}</span>` : "") + `</div>`).join("") +
+    `<div class="ed-ac-foot">Tab/Enter accept · ↑↓ choose · Esc close</div>`;
+  box.querySelectorAll(".ed-ac-item").forEach((el) =>
+    el.addEventListener("mousedown", (e) => { e.preventDefault(); edAcAccept(+el.dataset.i); }));
+  const c = _caretCoords(ta, ac.from);
+  const wrap = $("#code-wrap").getBoundingClientRect();
+  box.hidden = false;
+  const left = Math.max(4, Math.min(c.left - ta.scrollLeft, wrap.width - box.offsetWidth - 8));
+  let top = c.top - ta.scrollTop + c.height + 2;
+  if (top + box.offsetHeight > wrap.height - 4) top = Math.max(4, c.top - ta.scrollTop - box.offsetHeight - 2);
+  box.style.left = left + "px";
+  box.style.top = top + "px";
+  const act = box.querySelector(".ed-ac-item.active");
+  if (act) act.scrollIntoView({ block: "nearest" });
+}
+
+function edAcClose() { state.edAc = null; const b = $("#ed-ac"); if (b) b.hidden = true; }
+
+// Insert a snippet (``${n:placeholder}`` stops) over [from, to): tabs become the
+// editor's indent unit, continuation lines follow the current line's indent.
+// An outer snippet survives an inner plain insertion (e.g. a label picked in a
+// \ref{…} stop); a new snippet with stops replaces it.
+function edInsertSnippet(from, to, snippet) {
+  const ta = $("#source");
+  const lineStart = ta.value.lastIndexOf("\n", from - 1) + 1;
+  const indent = /^[ \t]*/.exec(ta.value.slice(lineStart))[0];
+  const snip = TexComplete.expandSnippet(snippet.replace(/\t/g, INDENT));
+  const text = TexComplete.indentSnippet(snip.text, indent);
+  const shift = (pos) => pos + (snip.text.slice(0, pos).split("\n").length - 1) * indent.length;
+  const outer = state.snippet;
+  edInsert(from, to, text);
+  const stops = snip.stops.map((st) => ({ start: from + shift(st.start), end: from + shift(st.end) }));
+  const final = from + shift(snip.final);
+  if (stops.length) {
+    state.snippet = { stops, cur: -1, len: ta.value.length, final };
+    edSnippetGo(1);
+    return;
+  }
+  ta.setSelectionRange(final, final);
+  if (outer) { state.snippet = outer; edSnippetTrack(); }
+  edAcUpdate(false, true);  // e.g. \ref → straight into the label list
+}
+
+function edAcAccept(i) {
+  const ac = state.edAc;
+  if (!ac) return;
+  const it = ac.items[i];
+  edAcClose();
+  bumpMru(it);
+  edInsertSnippet(ac.from, ac.to, it.insert + (ac.close || ""));
+}
+
+function edSnippetGo(dir) {
+  const sn = state.snippet, ta = $("#source");
+  if (!sn) return;
+  sn.cur += dir;
+  if (sn.cur < 0) sn.cur = 0;
+  if (sn.cur >= sn.stops.length) {  // past the last stop: leave the snippet
+    ta.setSelectionRange(sn.final, sn.final);
+    state.snippet = null;
+    return;
+  }
+  const st = sn.stops[sn.cur];
+  ta.setSelectionRange(st.start, st.end);
+  edAcUpdate(false, true);  // a stop inside \cite{…}/\ref{…} lists keys right away
+}
+
+// Keep snippet stops aligned with edits made inside the current stop.
+function edSnippetTrack() {
+  const sn = state.snippet, ta = $("#source");
+  if (!sn || sn.cur < 0) return;
+  const delta = ta.value.length - sn.len;
+  sn.len = ta.value.length;
+  const st = sn.stops[sn.cur];
+  const caret = ta.selectionStart;
+  if (caret < st.start || caret > st.end + Math.max(0, delta)) { state.snippet = null; return; }
+  st.end = Math.max(st.start, st.end + delta);
+  for (let k = sn.cur + 1; k < sn.stops.length; k++) { sn.stops[k].start += delta; sn.stops[k].end += delta; }
+  sn.final += delta;
+}
+
+function edOnInput(e) {
+  if (state.edInserting) return;
+  edSnippetTrack();
+  const t = e && e.inputType;
+  if (state.edAc || (t && (t.startsWith("insert") || t.startsWith("delete")))) {
+    const d = e && e.data;
+    if (state.edAc || (d && /[a-zA-Z@{,]/.test(d.slice(-1)))) edAcUpdate(false);
+  }
+  refreshCompletionIndex(false);
+}
+
+// Tab with nothing open: environment word → block, or complete. True if handled.
+function edTabComplete() {
+  const ta = $("#source"), v = ta.value, caret = ta.selectionStart;
+  if (langFor(state.activeFile) !== "tex" || TexComplete.inComment(v, caret)) return false;
+  if (!state.cIndex) refreshCompletionIndex(true);
+  const lineStart = v.lastIndexOf("\n", caret - 1) + 1;
+  const word = /^([ \t]*)([A-Za-z]+\*?)$/.exec(v.slice(lineStart, caret));
+  if (word && !/^[A-Za-z*]/.test(v[caret] || "") && TexComplete.envNames(state.cIndex).has(word[2])) {
+    bumpMru({ kind: "env", label: word[2] });
+    edInsertSnippet(lineStart + word[1].length, caret, TexComplete.envBlock(word[2], state.cIndex));
+    return true;
+  }
+  const res = TexComplete.complete(v, caret, state.cIndex, { file: state.activeFile, mru: state.acMru, limit: 50 });
+  if (!res || !res.items.length) return false;
+  const top = res.items[0];
+  const typed = (res.kind === "cmd" ? "\\" : "") + res.query;
+  if (top.label === typed && top.insert === top.label && !res.close) return false;  // already complete
+  state.edAc = { ...res, index: 0 };
+  if (res.items.length === 1 || top.label === typed) return edAcAccept(0), true;
+  edAcRender();  // several candidates: show them; Tab again accepts
+  return true;
+}
+
+// Indent (dir > 0) or outdent the selected lines; Tab with a caret inserts INDENT.
+function edIndent(dir) {
+  const ta = $("#source"), v = ta.value;
+  const s = ta.selectionStart, e = ta.selectionEnd;
+  if (dir > 0 && !v.slice(s, e).includes("\n")) { edInsert(s, e, INDENT); return; }
+  const a = v.lastIndexOf("\n", s - 1) + 1;
+  let b = v.indexOf("\n", e > s && v[e - 1] === "\n" ? e - 1 : e);
+  if (b < 0) b = v.length;
+  const lines = v.slice(a, b).split("\n");
+  const out = lines.map((l) => dir > 0 ? (l ? INDENT + l : l) : l.replace(/^(?: {1,2}|\t)/, ""));
+  const joined = out.join("\n");
+  if (joined === v.slice(a, b)) return;
+  edInsert(a, b, joined);
+  if (s === e) {
+    const p = Math.max(a, s - (lines[0].length - out[0].length));
+    ta.setSelectionRange(p, p);
+  } else {
+    ta.setSelectionRange(a, a + joined.length);
+  }
+}
+
+function edKeydown(e) {
+  if (e.isComposing || e.keyCode === 229) return;  // IME composition owns the keys
+  const ac = state.edAc, ta = $("#source");
+  const mods = e.ctrlKey || e.metaKey || e.altKey;
+  const tab = e.key === "Tab" && !mods;
+  if (["Shift", "Control", "Alt", "Meta"].includes(e.key)) return;  // e.g. Shift of Shift+Tab
+  const escArmed = state.tabEscape;
+  state.tabEscape = false;
+  if ((e.ctrlKey || e.metaKey) && e.code === "Space") { e.preventDefault(); return edAcUpdate(true); }
+  if (ac) {
+    const n = ac.items.length;
+    const move = (d) => { e.preventDefault(); ac.index = (ac.index + d + n) % n; edAcRender(); };
+    if (e.key === "ArrowDown" || (e.ctrlKey && e.key === "n")) return move(1);
+    if (e.key === "ArrowUp" || (e.ctrlKey && e.key === "p")) return move(-1);
+    if (e.key === "PageDown") return move(Math.min(8, n - 1 - ac.index) || 0);
+    if (e.key === "PageUp") return move(-Math.min(8, ac.index) || 0);
+    if (tab && e.shiftKey) return move(-1);
+    if (tab || (e.key === "Enter" && !mods && !e.shiftKey)) { e.preventDefault(); return edAcAccept(ac.index); }
+    if (e.key === "Escape") { e.preventDefault(); return edAcClose(); }
+    if (["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key) || (e.key === "Enter" && e.shiftKey)) edAcClose();
+  }
+  if (state.snippet) {
+    if (tab) { e.preventDefault(); return edSnippetGo(e.shiftKey ? -1 : 1); }
+    if (e.key === "Escape") { state.snippet = null; return; }
+  }
+  if (e.key === "Escape") { state.tabEscape = true; return; }  // the next Tab leaves the editor
+  if (tab) {
+    if (escArmed) return;  // let the browser move focus
+    e.preventDefault();
+    if (e.shiftKey) return edIndent(-1);
+    const multi = ta.value.slice(ta.selectionStart, ta.selectionEnd).includes("\n");
+    if (!multi && ta.selectionStart === ta.selectionEnd && edTabComplete()) return;
+    return edIndent(1);
+  }
+  // Enter right after \begin{env}: add the matching \end{env} below
+  if (e.key === "Enter" && !e.shiftKey && !mods &&
+      langFor(state.activeFile) === "tex" && ta.selectionStart === ta.selectionEnd) {
+    const caret = ta.selectionStart, v = ta.value;
+    const lineStart = v.lastIndexOf("\n", caret - 1) + 1;
+    const line = v.slice(lineStart, caret);
+    const m = /\\begin\{([^}]+)\}(?:\[[^\]]*\]|\{[^}]*\})*\s*$/.exec(line);
+    const rest = v.slice(caret, v.indexOf("\n", caret) < 0 ? v.length : v.indexOf("\n", caret));
+    if (m && !rest.trim() && !TexComplete.inComment(v, caret) && TexComplete.needsEnd(v, caret, m[1])) {
+      e.preventDefault();
+      const indent = /^[ \t]*/.exec(line)[0];
+      edInsert(caret, caret, `\n${indent}${INDENT}\n${indent}\\end{${m[1]}}`);
+      const pos = caret + 1 + indent.length + INDENT.length;
+      ta.setSelectionRange(pos, pos);
+    }
+  }
+}
+
+// ── Symbol palette ──────────────────────────────────────
+// A searchable grid of common symbols (symbols.js / symbols.svg). Clicking one
+// inserts it at the editor's caret; a math-only symbol typed outside math is
+// wrapped in $…$. Esc closes the palette and returns to the editor.
+function symPaletteToggle(force) {
+  const panel = $("#sym-panel");
+  const open = force === undefined ? panel.hidden : force;
+  panel.hidden = !open;
+  $("#btn-symbols").classList.toggle("active", open);
+  if (open) {
+    const ta = $("#source");
+    if (document.activeElement === ta) state.edSel = [ta.selectionStart, ta.selectionEnd];
+    symPaletteRender();
+    $("#sym-search").focus();
+  }
+}
+
+function symPaletteRender() {
+  const q = $("#sym-search").value.trim().toLowerCase().replace(/^\\/, "");
+  const group = state.symGroup || "All";
+  const recent = Object.entries(state.acMru).filter(([k]) => k.startsWith("sym:"))
+    .sort((a, b) => b[1] - a[1]).map(([k]) => k.slice(4));
+  const tabs = ["All", ...(recent.length ? ["Recent"] : []), ...TexSymbols.GROUPS];
+  $("#sym-tabs").innerHTML = tabs.map((g) =>
+    `<button class="sym-tab${g === group ? " active" : ""}" data-g="${esc(g)}">${esc(g)}</button>`).join("");
+  $("#sym-tabs").querySelectorAll(".sym-tab").forEach((b) => b.addEventListener("click", () => {
+    state.symGroup = b.dataset.g;
+    $("#sym-search").value = "";  // picking a group starts a fresh browse
+    symPaletteRender();
+  }));
+  let list = TexSymbols.LIST;
+  if (group === "Recent") list = recent.map((c) => TexSymbols.BY_CMD.get(c)).filter(Boolean);
+  else if (group !== "All") list = list.filter((s) => s.group === group);
+  if (q) list = list.filter((s) => s.cmd.toLowerCase().includes(q) || s.group.toLowerCase().includes(q));
+  const grid = $("#sym-grid");
+  grid.innerHTML = list.map((s) =>
+    `<button class="sym-btn" data-cmd="${esc(s.cmd)}" title="\\${esc(s.cmd)}${s.pkg ? " (" + esc(s.pkg) + ")" : ""}">` +
+    `${symbolIcon(TexSymbols.symbolId(s.cmd))}</button>`).join("") ||
+    `<div class="muted" style="padding:10px">No symbol matches.</div>`;
+  const hint = $("#sym-hint");
+  const show = (b) => {
+    const sy = TexSymbols.BY_CMD.get(b.dataset.cmd);
+    hint.innerHTML = `<code>\\${esc(sy.cmd)}</code> · ${esc(sy.group.toLowerCase())}` +
+      (sy.pkg ? ` · <code>${esc(sy.pkg)}</code>` : "") + (sy.where === "m" ? " · math" : sy.where === "t" ? " · text" : "");
+  };
+  grid.querySelectorAll(".sym-btn").forEach((b) => {
+    b.addEventListener("click", () => symInsert(TexSymbols.BY_CMD.get(b.dataset.cmd)));
+    b.addEventListener("mouseenter", () => show(b));
+    b.addEventListener("focus", () => show(b));
+  });
+}
+
+function symInsert(sym) {
+  if (!sym || !state.activeFile || isBinary(state.activeFile)) return;
+  const ta = $("#source");
+  const [from, to] = state.edSel || [ta.selectionStart, ta.selectionEnd];
+  let snip = "\\" + sym.cmd + (sym.snippet || "");
+  if (sym.where === "m" && !TexComplete.inMath(ta.value, from)) snip = "$" + snip + "$";
+  bumpMru({ kind: "sym", label: sym.cmd });
+  edInsertSnippet(from, to, snip);
+  state.edSel = [ta.selectionStart, ta.selectionEnd];
+  if (!$("#sym-panel").hidden) symPaletteRender();  // refresh the Recent row
+}
+
 // ── App state ───────────────────────────────────────────
 const state = {
   project: null,   // detail object {id, name, main_path, files: [...]}
@@ -218,6 +668,14 @@ const state = {
   contents: {},    // path -> in-memory content (may differ from server until saved)
   rtab: "report",  // report | structure | assistant
   preview: null,   // last preview payload
+  previewMode: "quick", // quick (incremental) | full — auto-refresh strategy
+  previewRev: null, // server revision of the segments currently shown
+  previewStale: false,
+  previewInflight: false,
+  previewQueued: null,
+  reconcileTimer: null,
+  rootFile: null,  // sticky render root (a file with \documentclass)
+  anchors: null,   // cached sync anchors [{el, file, line}]
   previewVisible: false,
   splitRatio: 0.55,// source fraction of the editor split
   previewTimer: null,
@@ -231,6 +689,16 @@ const state = {
   skills: [],      // slash-command skills (from /api/skills)
   conversation: null, // active chat session {id, messages:[...]}
   collapsed: new Set(), // collapsed folder paths in the file tree
+  layout: null,    // side panels {files,report: {width, collapsed}} (localStorage)
+  cIndex: null,    // editor completion index (TexComplete.buildIndex)
+  cIndexTimer: null,
+  edAc: null,      // open editor completion popup {items, index, from, to, kind}
+  edInserting: false,
+  snippet: null,   // active snippet {stops: [{start,end}], cur, len, final}
+  tabEscape: false,// Esc was pressed: the next Tab moves focus out of the editor
+  edSel: null,     // editor selection saved on blur (symbol palette inserts there)
+  symGroup: "All", // symbol palette tab
+  acMru: loadMru(),// accepted completions → ranking boost
   authEnabled: false,
   token: localStorage.getItem("tw_token") || null,
   user: null,      // {username, role}
@@ -322,14 +790,34 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#btn-save").addEventListener("click", () => saveActive(true));
   $("#btn-save-settings").addEventListener("click", saveSettings);
   $("#btn-convert").addEventListener("click", convertProject);
-  $("#source").addEventListener("input", () => {
+  $("#source").addEventListener("input", (e) => {
     if (!state.activeFile) return;
     state.contents[state.activeFile] = $("#source").value;
     updateHighlight();
     setDirty(true);
     markPreviewStale();
+    edOnInput(e);
   });
-  $("#source").addEventListener("scroll", syncHighlightScroll);
+  $("#source").addEventListener("keydown", edKeydown);
+  $("#source").addEventListener("blur", () => {
+    const ta = $("#source");
+    state.edSel = [ta.selectionStart, ta.selectionEnd];  // where the symbol palette inserts
+    setTimeout(edAcClose, 150);
+  });
+  $("#source").addEventListener("focus", () => { state.edSel = null; });
+  $("#btn-symbols").addEventListener("click", () => symPaletteToggle());
+  $("#sym-close").addEventListener("click", () => { symPaletteToggle(false); $("#source").focus(); });
+  $("#sym-search").addEventListener("input", symPaletteRender);
+  $("#sym-panel").addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.preventDefault(); symPaletteToggle(false); $("#source").focus(); }
+    if (e.key === "Enter" && e.target.id === "sym-search") {
+      e.preventDefault();
+      const first = $("#sym-grid .sym-btn");
+      if (first) first.click();
+    }
+  });
+  $("#source").addEventListener("mousedown", () => { edAcClose(); });
+  $("#source").addEventListener("scroll", () => { syncHighlightScroll(); edAcClose(); });
   // rough source ⇄ preview location sync (click the editor / click the preview)
   $("#source").addEventListener("click", syncEditorToPreview);
   $("#source").addEventListener("keyup", (e) => {
@@ -337,8 +825,12 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   $("#preview-doc").addEventListener("click", syncPreviewToEditor);
   $("#btn-toggle-preview").addEventListener("click", () => togglePreview());
-  $("#btn-refresh-preview").addEventListener("click", () => ensurePreview(true));
+  $("#btn-refresh-preview").addEventListener("click", () => requestPreview("full"));
+  document.querySelectorAll("[data-pmode]").forEach((b) =>
+    b.addEventListener("click", () => setPreviewMode(b.dataset.pmode)));
+  setPreviewMode(loadPreviewMode());
   setupSplitDivider();
+  setupPanels();
   document.querySelectorAll("[data-rtab]").forEach((b) =>
     b.addEventListener("click", () => setReportTab(b.dataset.rtab)));
   boot();
@@ -683,7 +1175,10 @@ async function openProject(id) {
   state.contents = {};
   for (const f of p.files) if (!f.is_binary) state.contents[f.path] = f.content || "";
   applySettings(p.settings);
-  state.preview = null;
+  resetPreviewState();
+  state.rootFile = p.main_path;
+  state.cIndex = null;
+  edAcClose(); state.snippet = null;
   state.lastReport = null;
   setCrumb(p.name);
   setScreen("workspace");
@@ -693,6 +1188,7 @@ async function openProject(id) {
   state.previewVisible = false;
   $("#preview-doc").innerHTML = "";
   $("#preview-stale").hidden = true;
+  $("#preview-status").textContent = "";
   $("#btn-toggle-preview").textContent = "Show preview";
   applySplit();
   setReportTab("report");
@@ -736,6 +1232,7 @@ function countTreeFiles(node) {
 }
 
 function renderFiles() {
+  refreshCompletionIndex(false);  // the file set may have changed
   const list = $("#file-list");
   list.innerHTML = "";
   renderTree(list, buildFileTree(state.files || []), 0);
@@ -804,17 +1301,19 @@ async function renameFile(path) {
     state.project.main_path = np;
   }
   if (state.activeFile === path) state.activeFile = np;
-  state.preview = null;
+  if (state.rootFile === path) state.rootFile = np;
+  markPreviewStale();
   renderFiles();
   if (state.activeFile === np) { $("#editor-tab").textContent = np; }
 }
 
-async function openFile(path) {
+async function openFile(path, opts) {
   if (!path) {
     state.activeFile = null; $("#editor-tab").textContent = "—";
     $("#source").value = ""; updateHighlight(); return;
   }
   if (state.dirty && state.activeFile && state.activeFile !== path) await saveActive(false);
+  edAcClose(); state.snippet = null;
   state.activeFile = path;
   $("#editor-tab").textContent = path;
   $("#btn-import-tex").hidden = langFor(path) !== "md";  // Markdown → "Import to TeX"
@@ -829,9 +1328,12 @@ async function openFile(path) {
     updateHighlight();
     $("#source").scrollTop = 0; syncHighlightScroll();
   }
+  // a standalone .tex becomes the render root; fragments keep the current one
+  const prevRoot = state.rootFile;
+  if (/\.tex$/i.test(path) && !isBinary(path) && isRootSource(state.contents[path])) state.rootFile = path;
   renderFiles();
-  // the render target follows the active .tex — refresh the preview if shown
-  if (state.previewVisible) { state.preview = null; ensurePreview(true); }
+  if (opts && opts.line) _scrollEditorToLine(opts.line - 1, true);
+  if (state.previewVisible && state.rootFile !== prevRoot) requestPreview("full");
 }
 
 function showAsset(path) {
@@ -916,7 +1418,7 @@ async function uploadAsset(file) {
     state.files = state.files.filter((f) => f.path !== path);
     state.files.push(meta);
     delete state.contents[path];
-    state.preview = null;
+    markPreviewStale();
     renderFiles();
     openFile(path);
   } catch (e) { alert("Upload failed: " + e.message); }
@@ -938,7 +1440,8 @@ async function deleteFile(path) {
   delete state.contents[path];
   state.files = state.files.filter((f) => f.path !== path);
   if (state.activeFile === path) state.activeFile = null;
-  state.preview = null;
+  if (state.rootFile === path) state.rootFile = state.project.main_path;
+  markPreviewStale();
   renderFiles();
   openFile(state.files.map((f) => f.path).sort()[0]);
 }
@@ -991,15 +1494,21 @@ async function saveSettings() {
   } catch (e) { alert("Save failed: " + e.message); }
 }
 
-// The clicked .tex file is the render/convert root; otherwise the server uses
-// the project's detected main (the file with \documentclass / \begin{document}).
+// The render/convert root is sticky: opening a file that can stand on its own
+// (\documentclass / \begin{document}) makes it the root; opening a fragment
+// pulled in by \input keeps the current root, so the whole document stays in
+// the preview while you edit a chapter.
+function isRootSource(text) {
+  const code = (text || "").replace(/(^|[^\\])%[^\n]*/g, "$1");
+  return /\\documentclass|\\begin\{document\}/.test(code);
+}
+
 function effectiveMain() {
-  const f = state.activeFile;
-  return (f && /\.tex$/i.test(f)) ? f : null;
+  return state.rootFile || null;
 }
 
 function renderMain() {
-  return effectiveMain() || (state.project && state.project.main_path);
+  return state.rootFile || (state.project && state.project.main_path);
 }
 
 // Poll an async conversion job until it finishes (or we give up).
@@ -1078,12 +1587,102 @@ function setupSplitDivider() {
   });
 }
 
+// ── Collapsible / resizable side panels ─────────────────
+// Widths and collapsed flags persist per browser (localStorage, best-effort).
+const PANEL_LIMITS = { files: [160, 480], report: [280, 720] };
+const PANEL_DEFAULT = { files: 230, report: 380 };
+const LAYOUT_KEY = "tw_layout";
+
+function loadLayout() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(LAYOUT_KEY) || "null"); } catch { saved = null; }
+  const narrow = window.innerWidth < 1100;
+  return {
+    files: { width: PANEL_DEFAULT.files, collapsed: false, ...(saved && saved.files) },
+    report: { width: PANEL_DEFAULT.report, collapsed: !saved && narrow, ...(saved && saved.report) },
+  };
+}
+
+function saveLayout() {
+  try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(state.layout)); } catch { /* private mode */ }
+}
+
+function clampPanel(name, w) {
+  const [lo, hi] = PANEL_LIMITS[name];
+  return Math.round(Math.max(lo, Math.min(hi, w)));
+}
+
+function applyLayout() {
+  for (const name of ["files", "report"]) {
+    const pane = $(`#pane-${name}`), cfg = state.layout[name];
+    if (!pane) continue;
+    pane.classList.toggle("collapsed", !!cfg.collapsed);
+    pane.style.width = cfg.collapsed ? "" : clampPanel(name, cfg.width) + "px";
+    const rz = document.querySelector(`[data-resize="${name}"]`);
+    if (rz) rz.classList.toggle("hidden-edge", !!cfg.collapsed);
+  }
+}
+
+function setPanelCollapsed(name, collapsed) {
+  state.layout[name].collapsed = collapsed;
+  applyLayout();
+  saveLayout();
+}
+
+function togglePanel(name) { setPanelCollapsed(name, !state.layout[name].collapsed); }
+
+function setupPanels() {
+  state.layout = loadLayout();
+  applyLayout();
+  document.querySelectorAll("[data-collapse]").forEach((b) =>
+    b.addEventListener("click", () => setPanelCollapsed(b.dataset.collapse, true)));
+  document.querySelectorAll("[data-expand]").forEach((b) =>
+    b.addEventListener("click", () => {
+      setPanelCollapsed(b.dataset.expand, false);
+      if (b.dataset.tab) setReportTab(b.dataset.tab);
+    }));
+  document.querySelectorAll("[data-resize]").forEach((handle) => {
+    const name = handle.dataset.resize;
+    handle.addEventListener("dblclick", () => togglePanel(name));
+    handle.addEventListener("mousedown", (e) => {
+      if (state.layout[name].collapsed) return;
+      e.preventDefault();
+      const pane = $(`#pane-${name}`), ws = $("#view-workspace");
+      const startX = e.clientX, startW = pane.getBoundingClientRect().width;
+      const sign = name === "files" ? 1 : -1;   // the right pane grows leftwards
+      handle.classList.add("dragging"); ws.classList.add("resizing");
+      const onMove = (ev) => {
+        state.layout[name].width = clampPanel(name, startW + sign * (ev.clientX - startX));
+        applyLayout();
+      };
+      const stop = () => {
+        handle.classList.remove("dragging"); ws.classList.remove("resizing");
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", stop);
+        saveLayout();
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", stop);
+    });
+  });
+  // Ctrl/Cmd+B → files; Ctrl/Cmd+Alt+B → right panel (VS Code's side-bar keys).
+  document.addEventListener("keydown", (e) => {
+    if ($("#view-workspace").hidden || !$("#tg-modal").hidden) return;  // the table generator owns Ctrl+B (bold)
+    if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.code !== "KeyB") return;
+    e.preventDefault();
+    togglePanel(e.altKey ? "report" : "files");
+  });
+}
+
 function markPreviewStale() {
-  state.preview = null;
+  state.previewStale = true;
+  clearTimeout(state.reconcileTimer);
   if (!state.previewVisible) return;
   $("#preview-stale").hidden = false;
   clearTimeout(state.previewTimer);
-  state.previewTimer = setTimeout(() => ensurePreview(true), 900);
+  const quick = state.previewMode === "quick" && state.preview;
+  state.previewTimer = setTimeout(() => requestPreview(quick ? "quick" : "full"),
+                                  quick ? QUICK_DELAY : FULL_DELAY);
 }
 
 function setReportTab(tab) {
@@ -1093,6 +1692,8 @@ function setReportTab(tab) {
   $("#tab-report").hidden = tab !== "report";
   $("#tab-structure").hidden = tab !== "structure";
   $("#tab-assistant").hidden = tab !== "assistant";
+  document.querySelectorAll(".rail-tab").forEach((b) =>
+    b.classList.toggle("active", b.dataset.tab === tab));
 }
 
 // ── Assistant ───────────────────────────────────────────
@@ -1436,36 +2037,141 @@ function writeToFile(text) {
   markPreviewStale();
 }
 
-async function ensurePreview(force) {
-  if (state.preview && !force) { renderPreview(); $("#preview-stale").hidden = true; return; }
+// ── Live preview: full / quick renders + segment patching ──
+// Full: the server re-parses the whole project. Quick: it re-parses only the
+// chunks you edited (or says why it fell back to full). Either way the reply
+// carries keyed segments; we swap only the blocks whose key changed, so the
+// preview keeps its scroll position and untouched math is never re-laid-out.
+// After a burst of quick updates, a background full render reconciles.
+const PREVIEW_MODE_KEY = "tw_preview_mode";
+const QUICK_DELAY = 300, FULL_DELAY = 900, RECONCILE_DELAY = 4000;
+const PRIORITY = { quick: 1, reconcile: 2, full: 3 };
+
+function loadPreviewMode() {
+  try { return localStorage.getItem(PREVIEW_MODE_KEY) === "full" ? "full" : "quick"; } catch { return "quick"; }
+}
+
+function setPreviewMode(mode) {
+  state.previewMode = mode;
+  try { localStorage.setItem(PREVIEW_MODE_KEY, mode); } catch { /* private mode */ }
+  document.querySelectorAll("[data-pmode]").forEach((b) =>
+    b.classList.toggle("active", b.dataset.pmode === mode));
+}
+
+function resetPreviewState() {
+  state.preview = null; state.previewRev = null; state.previewStale = false;
+  state.anchors = null;
+  clearTimeout(state.previewTimer); clearTimeout(state.reconcileTimer);
+}
+
+// kind: "full" (replace everything) | "reconcile" (full parse, patch) | "quick"
+async function requestPreview(kind) {
+  if (!state.project || !state.previewVisible) return;
+  if (state.previewInflight) {
+    if (!state.previewQueued || PRIORITY[kind] > PRIORITY[state.previewQueued]) state.previewQueued = kind;
+    return;
+  }
   clearTimeout(state.previewTimer);
+  if (kind !== "reconcile") clearTimeout(state.reconcileTimer);
+  const pid = state.project.id;
+  const patch = kind !== "full" && state.preview && state.previewRev != null;
+  const body = {
+    options: readOptions(), main_path: effectiveMain(),
+    mode: kind === "quick" ? "quick" : "full",
+    base_rev: patch ? state.previewRev : null,
+  };
+  state.previewInflight = true;
   const doc = $("#preview-doc");
-  doc.innerHTML = `<div class="placeholder">Rendering preview…</div>`;
-  if (state.dirty) await saveActive(false);
+  if (!state.preview) doc.innerHTML = `<div class="placeholder">Rendering preview…</div>`;
+  $("#preview-status").textContent = kind === "quick" ? "updating…" : "rendering…";
   try {
-    state.preview = await api("POST", `/api/projects/${state.project.id}/preview`,
-      { options: readOptions(), main_path: effectiveMain() });
-    renderPreview();
-    renderStructure();
-    $("#preview-stale").hidden = true;
+    if (state.dirty) await saveActive(false);
+    const data = await api("POST", `/api/projects/${pid}/preview`, body);
+    if (!state.project || state.project.id !== pid) return;  // switched project meanwhile
+    if (!applyPreview(data, patch)) {
+      state.previewQueued = "full";  // lost sync with the server: start over
+    } else if (data.mode === "quick" && !state.previewQueued) {
+      state.reconcileTimer = setTimeout(() => requestPreview("reconcile"), RECONCILE_DELAY);
+    }
   } catch (e) {
+    state.preview = null; state.previewRev = null;
     doc.innerHTML = `<div class="banner error" style="margin:14px">${esc(e.message)}</div>`;
+    $("#preview-status").textContent = "";
+  } finally {
+    state.previewInflight = false;
+    const next = state.previewQueued;
+    state.previewQueued = null;
+    if (next) requestPreview(next);
   }
 }
 
-function renderPreview() {
-  const pv = $("#preview-doc");
-  let html = state.preview ? state.preview.html : `<div class="placeholder">No preview.</div>`;
+function withTokenHtml(html) {
   // server-embedded figure URLs (/…/raw) need the session token under auth
-  if (state.preview && state.authEnabled && state.token) {
-    html = html.replace(/\/raw"/g, `/raw?access_token=${encodeURIComponent(state.token)}"`);
+  if (state.authEnabled && state.token) {
+    return html.replace(/\/raw"/g, `/raw?access_token=${encodeURIComponent(state.token)}"`);
   }
-  pv.innerHTML = html;
+  return html;
+}
+
+function htmlToElement(html) {
+  const t = document.createElement("template");
+  t.innerHTML = withTokenHtml(html);
+  return t.content.firstElementChild;
+}
+
+// Apply a preview payload; returns false if a patch could not be applied.
+function applyPreview(data, patch) {
+  const pv = $("#preview-doc");
+  const segs = data.segments || [];
+  let changed = segs.length;
+  if (patch) {
+    const kids = [...pv.children];
+    const plan = TexSync.planPatch(kids.map((el) => el.dataset.k || ""), segs);
+    if (!plan) return false;
+    plan.remove.forEach((i) => kids[i].remove());
+    changed = 0;
+    segs.forEach(([, html], i) => {
+      let el = plan.take[i] >= 0 ? kids[plan.take[i]] : htmlToElement(html);
+      if (plan.take[i] < 0) changed++;
+      if (pv.children[i] !== el) pv.insertBefore(el, pv.children[i] || null);
+    });
+  } else {
+    const top = pv.scrollTop;
+    pv.innerHTML = withTokenHtml(segs.map(([, h]) => h).join("")) ||
+      `<div class="placeholder">Empty document.</div>`;
+    pv.scrollTop = top;
+  }
   // Large docs: let the browser skip laying out off-screen blocks
-  // (content-visibility "page pool") so hundreds of MathML nodes don't all
-  // render at once. Every block stays in the DOM, so anchors/scroll-sync work.
-  const heavy = !!state.preview && (pv.children.length > 60 || html.length > 60000);
-  pv.classList.toggle("virtualized", heavy);
+  // (content-visibility) so hundreds of MathML nodes don't all render at once.
+  pv.classList.toggle("virtualized", pv.children.length > 60);
+  state.preview = data;
+  state.previewRev = data.rev;
+  state.previewStale = false;
+  state.anchors = null;
+  if (data.main_path) state.rootFile = data.main_path;
+  $("#preview-stale").hidden = true;
+  renderPreviewStatus(data, changed);
+  renderStructure();
+  renderFiles();
+  return true;
+}
+
+function renderPreviewStatus(data, changed) {
+  const st = $("#preview-status");
+  const t = data.timings ? `${Math.round(data.timings.total_ms)} ms` : "";
+  const blocks = (data.segments || []).length;
+  const parts = [data.mode || "full", t];
+  if (data.mode === "quick") parts.push(`${changed}/${blocks}`);
+  st.textContent = parts.filter(Boolean).join(" · ");
+  const detail = data.chunks ? `${data.chunks.reparsed} of ${data.chunks.total} chunks re-parsed, ` +
+    `${changed} of ${blocks} blocks updated` : "";
+  st.title = data.reason ? `Ran a full render: ${data.reason}.` : detail;
+  st.classList.toggle("fell-back", !!data.reason);
+}
+
+async function ensurePreview(force) {
+  if (state.preview && !force && !state.previewStale) return;
+  await requestPreview("full");
 }
 
 function renderStructure() {

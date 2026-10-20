@@ -54,6 +54,14 @@ rate_limit_per_min = 240        # general /api requests per IP
 heavy_rate_limit_per_min = 60   # convert / assistant / chat / import per IP
 login_rate_limit_per_min = 10   # POST /api/auth/login per IP
 
+# --- Imported source bundles ------------------------------------------------
+# arXiv e-prints and uploaded .zip/.tar(.gz) archives. max_archive_mb caps both
+# the download/upload and the total size of the extracted files (papers with
+# many figures can be large); uploads may exceed [security].max_body_mb up to it.
+[import]
+max_archive_mb = 100
+max_archive_files = 500
+
 # --- LLM generation defaults ------------------------------------------------
 [llm]
 max_tokens = 8192               # default max tokens for completions

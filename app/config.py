@@ -110,6 +110,23 @@ class SecurityConfig:
 
 
 @dataclass(slots=True)
+class ImportConfig:
+    """Limits for imported source bundles (arXiv e-prints, uploaded archives).
+
+    ``max_archive_mb`` caps the downloaded/uploaded archive *and* the total size
+    of the files extracted from it (archive-bomb guard); ``max_archive_files``
+    caps the number of extracted files.
+    """
+
+    max_archive_mb: int = 100
+    max_archive_files: int = 500
+
+    @property
+    def max_archive_bytes(self) -> int:
+        return self.max_archive_mb * 1024 * 1024
+
+
+@dataclass(slots=True)
 class LLMConfig:
     """LLM generation defaults applied when callers don't override."""
 
@@ -126,6 +143,7 @@ class Config:
     assistant: AssistantConfig = field(default_factory=AssistantConfig)
     security: SecurityConfig = field(default_factory=SecurityConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
+    imports: ImportConfig = field(default_factory=ImportConfig)
     source_path: str | None = None
 
     def provider(self, name: str | None = None) -> Provider:
@@ -151,6 +169,10 @@ class Config:
             },
             # only the on/off flag is public; key paths stay server-side
             "auth": {"enabled": self.auth.enabled},
+            "import": {
+                "max_archive_mb": self.imports.max_archive_mb,
+                "max_archive_files": self.imports.max_archive_files,
+            },
         }
 
 
@@ -226,6 +248,14 @@ def _parse(data: dict[str, Any], source_path: str | None) -> Config:
         login_rate_limit_per_min=int(sec.get("login_rate_limit_per_min", 10)),
     )
 
+    imp = data.get("import") or {}
+    imports = ImportConfig(
+        max_archive_mb=int(imp.get("max_archive_mb", 100)),
+        max_archive_files=int(imp.get("max_archive_files", 500)),
+    )
+    if imports.max_archive_mb < 1 or imports.max_archive_files < 1:
+        raise ValueError("[import] max_archive_mb and max_archive_files must be >= 1")
+
     llm_data = data.get("llm") or {}
     llm_cfg = LLMConfig(
         max_tokens=int(llm_data.get("max_tokens", 8192)),
@@ -241,6 +271,7 @@ def _parse(data: dict[str, Any], source_path: str | None) -> Config:
         assistant=assistant_cfg,
         security=security,
         llm=llm_cfg,
+        imports=imports,
         source_path=source_path,
     )
 
