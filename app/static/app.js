@@ -231,6 +231,7 @@ const state = {
   skills: [],      // slash-command skills (from /api/skills)
   conversation: null, // active chat session {id, messages:[...]}
   collapsed: new Set(), // collapsed folder paths in the file tree
+  layout: null,    // side panels {files,report: {width, collapsed}} (localStorage)
   authEnabled: false,
   token: localStorage.getItem("tw_token") || null,
   user: null,      // {username, role}
@@ -339,6 +340,7 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#btn-toggle-preview").addEventListener("click", () => togglePreview());
   $("#btn-refresh-preview").addEventListener("click", () => ensurePreview(true));
   setupSplitDivider();
+  setupPanels();
   document.querySelectorAll("[data-rtab]").forEach((b) =>
     b.addEventListener("click", () => setReportTab(b.dataset.rtab)));
   boot();
@@ -1078,6 +1080,93 @@ function setupSplitDivider() {
   });
 }
 
+// ── Collapsible / resizable side panels ─────────────────
+// Widths and collapsed flags persist per browser (localStorage, best-effort).
+const PANEL_LIMITS = { files: [160, 480], report: [280, 720] };
+const PANEL_DEFAULT = { files: 230, report: 380 };
+const LAYOUT_KEY = "tw_layout";
+
+function loadLayout() {
+  let saved = null;
+  try { saved = JSON.parse(localStorage.getItem(LAYOUT_KEY) || "null"); } catch { saved = null; }
+  const narrow = window.innerWidth < 1100;
+  return {
+    files: { width: PANEL_DEFAULT.files, collapsed: false, ...(saved && saved.files) },
+    report: { width: PANEL_DEFAULT.report, collapsed: !saved && narrow, ...(saved && saved.report) },
+  };
+}
+
+function saveLayout() {
+  try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(state.layout)); } catch { /* private mode */ }
+}
+
+function clampPanel(name, w) {
+  const [lo, hi] = PANEL_LIMITS[name];
+  return Math.round(Math.max(lo, Math.min(hi, w)));
+}
+
+function applyLayout() {
+  for (const name of ["files", "report"]) {
+    const pane = $(`#pane-${name}`), cfg = state.layout[name];
+    if (!pane) continue;
+    pane.classList.toggle("collapsed", !!cfg.collapsed);
+    pane.style.width = cfg.collapsed ? "" : clampPanel(name, cfg.width) + "px";
+    const rz = document.querySelector(`[data-resize="${name}"]`);
+    if (rz) rz.classList.toggle("hidden-edge", !!cfg.collapsed);
+  }
+}
+
+function setPanelCollapsed(name, collapsed) {
+  state.layout[name].collapsed = collapsed;
+  applyLayout();
+  saveLayout();
+}
+
+function togglePanel(name) { setPanelCollapsed(name, !state.layout[name].collapsed); }
+
+function setupPanels() {
+  state.layout = loadLayout();
+  applyLayout();
+  document.querySelectorAll("[data-collapse]").forEach((b) =>
+    b.addEventListener("click", () => setPanelCollapsed(b.dataset.collapse, true)));
+  document.querySelectorAll("[data-expand]").forEach((b) =>
+    b.addEventListener("click", () => {
+      setPanelCollapsed(b.dataset.expand, false);
+      if (b.dataset.tab) setReportTab(b.dataset.tab);
+    }));
+  document.querySelectorAll("[data-resize]").forEach((handle) => {
+    const name = handle.dataset.resize;
+    handle.addEventListener("dblclick", () => togglePanel(name));
+    handle.addEventListener("mousedown", (e) => {
+      if (state.layout[name].collapsed) return;
+      e.preventDefault();
+      const pane = $(`#pane-${name}`), ws = $("#view-workspace");
+      const startX = e.clientX, startW = pane.getBoundingClientRect().width;
+      const sign = name === "files" ? 1 : -1;   // the right pane grows leftwards
+      handle.classList.add("dragging"); ws.classList.add("resizing");
+      const onMove = (ev) => {
+        state.layout[name].width = clampPanel(name, startW + sign * (ev.clientX - startX));
+        applyLayout();
+      };
+      const stop = () => {
+        handle.classList.remove("dragging"); ws.classList.remove("resizing");
+        window.removeEventListener("mousemove", onMove);
+        window.removeEventListener("mouseup", stop);
+        saveLayout();
+      };
+      window.addEventListener("mousemove", onMove);
+      window.addEventListener("mouseup", stop);
+    });
+  });
+  // Ctrl/Cmd+B → files; Ctrl/Cmd+Alt+B → right panel (VS Code's side-bar keys).
+  document.addEventListener("keydown", (e) => {
+    if ($("#view-workspace").hidden) return;
+    if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.code !== "KeyB") return;
+    e.preventDefault();
+    togglePanel(e.altKey ? "report" : "files");
+  });
+}
+
 function markPreviewStale() {
   state.preview = null;
   if (!state.previewVisible) return;
@@ -1093,6 +1182,8 @@ function setReportTab(tab) {
   $("#tab-report").hidden = tab !== "report";
   $("#tab-structure").hidden = tab !== "structure";
   $("#tab-assistant").hidden = tab !== "assistant";
+  document.querySelectorAll(".rail-tab").forEach((b) =>
+    b.classList.toggle("active", b.dataset.tab === tab));
 }
 
 // ── Assistant ───────────────────────────────────────────

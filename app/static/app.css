@@ -144,9 +144,26 @@ button { font-family: var(--font); cursor: pointer; border: 1px solid transparen
 /* ── Workspace screen ────────────────────────────────── */
 .workspace { display: flex; }
 .pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
-.pane.files { width: 230px; flex: none; border-right: 1px solid var(--border); background: var(--bg-shell); }
-.pane.editor { flex: 1; border-right: 1px solid var(--border); background: var(--bg-content); }
+.pane.files { width: 230px; flex: none; background: var(--bg-shell); }
+.pane.editor { flex: 1; min-width: 280px; background: var(--bg-content); }
 .pane.report { width: 380px; flex: none; background: var(--bg-shell); display: flex; flex-direction: column; overflow: hidden; }
+
+/* Collapsible / resizable side panels. A collapsed pane shrinks to a rail
+   with an expand button (and, for the right pane, one button per tab). */
+.pane.files, .pane.report { position: relative; }
+.pane-rail { display: none; }
+.pane.collapsed { width: 38px !important; }
+.pane.collapsed > :not(.pane-rail) { display: none !important; }
+.pane.collapsed > .pane-rail { display: flex; flex-direction: column; align-items: center; gap: 6px; padding: 8px 0; height: 100%; background: var(--bg-elevated); }
+.rail-label { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-3); cursor: pointer; margin-top: 6px; user-select: none; }
+.rail-label:hover { color: var(--text-1); }
+.rail-tab.active { background: var(--bg-content); color: var(--text-1); box-shadow: var(--shadow-sm); }
+.pane-resizer { flex: none; width: 5px; margin: 0 -2px; z-index: 5; cursor: col-resize; background: transparent; position: relative; }
+.pane-resizer::after { content: ""; position: absolute; top: 0; bottom: 0; left: 2px; width: 1px; background: var(--border); }
+.pane-resizer:hover::after, .pane-resizer.dragging::after { width: 3px; left: 1px; background: var(--border-hover); }
+.pane-resizer.hidden-edge { cursor: default; pointer-events: none; }
+.workspace.resizing { user-select: none; cursor: col-resize; }
+.workspace.resizing iframe, .workspace.resizing #preview-doc { pointer-events: none; }
 
 .pane-head { height: 44px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 14px; border-bottom: 1px solid var(--border); background: var(--bg-elevated); }
 .pane-title { font-size: 13px; font-weight: 600; color: var(--text-1); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
