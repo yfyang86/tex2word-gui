@@ -135,6 +135,9 @@
         <span class="pane-title sub" id="editor-tab">—</span>
         <span class="dirty-dot" id="dirty-dot" hidden title="unsaved changes"></span>
         <div class="spacer"></div>
+        <button class="icon-btn" id="btn-symbols" title="Symbols" aria-label="Symbol palette">
+          <svg class="sym-svg" aria-hidden="true"><use href="/static/symbols.svg#s-Omega"/></svg>
+        </button>
         <button class="btn-secondary" id="btn-import-tex" hidden title="Convert this Markdown file to a new .tex file">Import to TeX</button>
         <button class="btn-secondary" id="btn-save">Save</button>
         <button class="btn-secondary" id="btn-toggle-preview">Show preview</button>
@@ -147,6 +150,17 @@
             <div id="ed-ac" class="ed-ac" role="listbox" hidden></div>
           </div>
           <div class="asset-view" id="asset-view" hidden></div>
+          <div class="sym-panel" id="sym-panel" role="dialog" aria-label="Symbols" hidden>
+            <div class="sym-head">
+              <input type="text" id="sym-search" placeholder="Search symbols — alpha, arrow, leq…" autocomplete="off" spellcheck="false">
+              <button class="icon-btn" id="sym-close" title="Close (Esc)">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none"><line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+              </button>
+            </div>
+            <div class="sym-tabs" id="sym-tabs"></div>
+            <div class="sym-grid" id="sym-grid"></div>
+            <div class="sym-foot" id="sym-hint">Click to insert · math symbols get <code>$…$</code> outside math · Tab completes in the editor</div>
+          </div>
         </div>
         <div class="split-divider" id="split-divider" hidden title="Drag to resize"></div>
         <div class="split-pane preview-pane" id="preview-pane" hidden>
@@ -323,6 +337,7 @@
   </div>
 
   <script src="/static/sync.js"></script>
+  <script src="/static/symbols.js"></script>
   <script src="/static/complete.js"></script>
   <script src="/static/app.js"></script>
 </body>

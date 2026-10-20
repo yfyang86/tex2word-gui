@@ -343,6 +343,32 @@ button { font-family: var(--font); cursor: pointer; border: 1px solid transparen
 .ed-ac-detail { color: var(--text-3); overflow: hidden; text-overflow: ellipsis; min-width: 0; flex: 1; }
 .ed-ac-src { color: var(--text-4); font-family: var(--mono); font-size: 10.5px; flex: none; max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
 
+.ed-ac-icon { flex: none; width: 18px; height: 18px; display: inline-flex; align-items: center; justify-content: center; align-self: center; color: var(--text-1); }
+.ed-ac-icon .sym-svg { width: 18px; height: 18px; }
+.ed-ac-swatch { width: 12px; height: 12px; border-radius: 3px; border: 1px solid var(--border-hover); }
+.ed-ac-foot { position: sticky; bottom: -4px; margin: 4px -4px -4px; padding: 4px 10px; font-size: 10.5px; color: var(--text-4); background: var(--bg-elevated); border-top: 1px solid var(--border); }
+.sym-svg { width: 16px; height: 16px; display: block; }
+#btn-symbols.active { background: var(--hover-bg); color: var(--text-1); }
+
+/* symbol palette (floats over the editor, top-right) */
+#source-pane { position: relative; }
+.sym-panel { position: absolute; top: 8px; right: 12px; z-index: 12; width: 340px; max-height: calc(100% - 16px);
+  display: flex; flex-direction: column; background: var(--bg-content); border: 1px solid var(--border);
+  border-radius: 10px; box-shadow: var(--shadow-menu); overflow: hidden; }
+.sym-head { display: flex; gap: 6px; align-items: center; padding: 8px 8px 6px; }
+.sym-head input { flex: 1; min-width: 0; font: inherit; font-size: 12px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; outline: none; background: var(--bg-content); color: var(--text-1); }
+.sym-head input:focus { border-color: var(--border-hover); box-shadow: var(--shadow-focus); }
+.sym-tabs { display: flex; flex-wrap: wrap; gap: 3px; padding: 0 8px 6px; }
+.sym-tab { border: none; background: var(--bg-elevated); color: var(--text-3); font-size: 10.5px; padding: 2px 7px; border-radius: 5px; cursor: pointer; }
+.sym-tab:hover { color: var(--text-1); }
+.sym-tab.active { background: var(--text-1); color: var(--bg-content); }
+.sym-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(34px, 1fr)); gap: 3px; padding: 0 8px 8px; overflow-y: auto; min-height: 0; }
+.sym-btn { height: 34px; border: 1px solid transparent; background: var(--bg-shell); border-radius: 6px; display: flex; align-items: center; justify-content: center; cursor: pointer; color: var(--text-1); }
+.sym-btn:hover, .sym-btn:focus-visible { border-color: var(--border-hover); background: var(--bg-content); outline: none; }
+.sym-btn .sym-svg { width: 22px; height: 22px; }
+.sym-foot { font-size: 10.5px; color: var(--text-4); padding: 6px 10px; border-top: 1px solid var(--border); background: var(--bg-elevated); }
+.sym-foot code { font-family: var(--mono); }
+
 /* binary asset preview in the editor pane */
 .asset-view { flex: 1; min-height: 0; overflow: auto; background: var(--bg-shell); display: flex; align-items: center; justify-content: center; padding: 20px; }
 .asset-view img { max-width: 100%; max-height: 100%; background: #fff; border: 1px solid var(--border); border-radius: var(--radius); }

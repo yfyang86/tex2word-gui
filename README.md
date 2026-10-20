@@ -46,9 +46,16 @@ essential module; the web app is a thin adapter around its IR and outputs.
   faster than before.
 - **Smart autocompletion** in the editor — commands (math-aware), environments
   with block snippets and tabstops, `\ref` → labels (with what they label),
-  `\cite` → bibliography keys (author · year · title), project macros,
-  `\input`/`\includegraphics` paths and packages; Enter after `\begin{env}` adds
-  the `\end`. Unknown `\ref`/`\cite` keys are underlined.
+  `\cite` → bibliography keys (author · year · title), project macros (with
+  their definition and optional arguments), colours with swatches, suggested
+  `\label` names, `\input`/`\includegraphics` paths and packages; Enter after
+  `\begin{env}` adds the `\end`. Unknown `\ref`/`\cite` keys are underlined.
+- **Tab completion** — Tab completes a unique match, opens the list when several
+  match, walks snippet stops, expands an environment name typed alone on a line,
+  and indents otherwise (Shift+Tab outdents; Esc then Tab leaves the editor).
+- **Symbol palette** — ~250 common symbols with SVG glyph previews (also shown
+  in the completion list), searchable by name or group; math symbols are
+  wrapped in `$…$` when inserted outside math.
 - **Collapsible, resizable side panels** — hide the files pane (**Ctrl/Cmd+B**)
   or the report/assistant pane (**Ctrl/Cmd+Alt+B**), drag their edges to resize;
   the layout is remembered per browser.
@@ -273,11 +280,13 @@ app/
   chat.py        persisted multi-turn conversations + messages
   models.py      pydantic schemas
   static/        single-page UI (HTML/CSS/JS + design tokens); sync.js and
-                 complete.js are DOM-free engines shared with the node tests
+                 complete.js are DOM-free engines shared with the node tests;
+                 symbols.js + symbols.svg are the symbol list and its sprite
 tests/           pytest suite (one file per area) + conftest
   js/            node unit tests for the frontend engines
   e2e/           Playwright end-to-end specs + runner (boots the app on a temp DB)
 manage.py        admin / DB management CLI (users, keys, db-info)
+scripts/build_symbols.py  regenerate app/static/symbols.svg from symbols.js
 config.sample.toml  configuration template (copy to config.toml)
 DEVELOPER-MANUAL.md  architecture & internals
 server.sh        start/stop/status/restart wrapper

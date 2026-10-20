@@ -33,8 +33,14 @@ async function startServer() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "tw-e2e-"));
   const env = { ...process.env, TEX2WORD_DB: path.join(dir, "e2e.db") };
   const py = process.env.PYTHON || path.join(ROOT, ".venv", "bin", "python");
-  const proc = spawn(py, ["-m", "uvicorn", "app.main:app", "--port", String(port), "--log-level", "warning"],
-    { cwd: ROOT, env, stdio: ["ignore", "inherit", "inherit"] });
+  // The suites fire hundreds of requests a minute from one IP; switch the app's
+  // per-IP rate limiter off for this throwaway server (as tests/conftest.py does).
+  const launcher = [
+    "import uvicorn, app.main as m",
+    "m.rate_limiter.enabled = False",
+    `uvicorn.run(m.app, host="127.0.0.1", port=${port}, log_level="warning")`,
+  ].join("\n");
+  const proc = spawn(py, ["-c", launcher], { cwd: ROOT, env, stdio: ["ignore", "inherit", "inherit"] });
   const base = `http://127.0.0.1:${port}`;
   await waitFor(base + "/api/health");
   return { base, stop: () => proc.kill("SIGTERM") };

@@ -251,3 +251,61 @@ test("the catalog is well formed", () => {
   }
   for (const [name, body] of T.ENVIRONMENTS) assert.ok(name && typeof body === "string", name);
 });
+
+test("\\begin and \\end are commands that open the environment list", () => {
+  const r = at("\\beg|");
+  assert.equal(r.items[0].label, "\\begin");
+  assert.equal(r.items[0].insert, "\\begin{${1}}");
+});
+
+test("macros: optional arguments, xparse signatures, definition preview", () => {
+  const ix = T.buildIndex({ "m.tex": String.raw`
+\newcommand{\norm}[2][2]{\left\| #2 \right\|_{#1}}
+\NewDocumentCommand{\pair}{s o m m}{(#3, #4)}
+\def\half#1{\frac{#1}{2}}
+\DeclareMathOperator{\Tr}{tr}` });
+  const norm = ix.macros.get("norm");
+  assert.deepEqual(norm.sig, ["o", "m"]);
+  assert.equal(T.macroSnippet(norm), "{${1:#2}}");          // the optional [#1] is left out
+  assert.equal(T.macroSnippet(ix.macros.get("pair")), "{${1:#3}}{${2:#4}}");
+  assert.equal(ix.macros.get("half").body, "\\frac{#1}{2}");
+  const item = T.complete("$\\nor", 5, ix, {}).items.find((i) => i.label === "\\norm");
+  assert.match(item.detail, /2 args \(1 optional\) → \\left\\\| #2/);
+  assert.equal(ix.macros.get("Tr").body, "tr");
+});
+
+test("colours complete with swatches (base + project colours)", () => {
+  const ix = T.buildIndex({ "m.tex": String.raw`\definecolor{brand}{HTML}{D92B2B}
+\definecolor{soft}{rgb}{0.5,0.5,1}\colorlet{accent}{brand!60}` });
+  const r = T.complete("\\textcolor{", 11, ix, {});
+  assert.equal(r.kind, "color");
+  const by = Object.fromEntries(r.items.map((i) => [i.label, i]));
+  assert.equal(by.brand.swatch, "#d92b2b");
+  assert.equal(by.soft.swatch, "#8080ff");
+  assert.equal(by.accent.swatch, "#d92b2b");
+  assert.equal(by.red.swatch, "#ff0000");
+  assert.equal(r.items[0].label === "accent" || r.items[0].label === "brand" || r.items[0].label === "soft", true);
+  assert.equal(T.colorCss("cmyk", "0,1,1,0"), "#ff0000");
+  assert.equal(T.colorCss("wave", "500"), "");
+});
+
+test("\\label{ suggests a prefixed name from the caption or heading", () => {
+  const ix = T.buildIndex({});
+  const fig = "\\begin{figure}\\caption{Training loss of the model}\\label{";
+  assert.deepEqual(T.complete(fig, fig.length, ix, {}).items.map((i) => i.label), ["fig:training-loss-model", "fig:"]);
+  const sec = "\\section{Related Work}\n\\label{";
+  assert.equal(T.complete(sec, sec.length, ix, {}).items[0].label, "sec:related-work");
+  const eq = "\\begin{equation} x \\label{";
+  assert.deepEqual(T.complete(eq, eq.length, ix, {}).items.map((i) => i.label), ["eq:"]);
+  // an existing key gets a numeric suffix
+  const taken = T.buildIndex({ "a.tex": "\\section{Related Work}\\label{sec:related-work}" });
+  assert.equal(T.labelSuggestions(sec, sec.length, taken)[0], "sec:related-work-2");
+});
+
+test("envBlock / envNames for Tab expansion of a bare environment word", () => {
+  assert.equal(T.envBlock("itemize", IX), "\\begin{itemize}\n\t\\item ${1}\n\\end{itemize}");
+  assert.match(T.envBlock("figure", IX), /^\\begin\{figure\}\[\$\{1:htbp\}\]\n\t\\centering/);
+  assert.equal(T.envBlock("note", IX), "\\begin{note}{${1:#1}}\n\t${1}\n\\end{note}");
+  const names = T.envNames(IX);
+  assert.ok(names.has("align*") && names.has("lemma") && !names.has("prose"));
+});

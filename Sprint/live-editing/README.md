@@ -9,6 +9,7 @@ while typing.
 | [01](sprint-01-engine-and-panels.md) | tex2word 1.0.8 verification, e2e harness, collapsible/resizable panels | done |
 | [02](sprint-02-sync-and-quick-preview.md) | Multi-file source map, cross-file sync, quick/full preview | done |
 | [03](sprint-03-autocomplete.md) | Smart LaTeX autocompletion + reference diagnostics | done |
+| [04](sprint-04-tab-and-symbols.md) | Tab completion key map, symbol palette + SVG previews, environments, macros, colours, label names | done |
 
 ## How it is tested
 

@@ -102,7 +102,7 @@ module.exports = {
     await page.keyboard.press("Enter");
     await page.keyboard.type("first");
     const v = await value(page);
-    assert(/\\begin\{enumerate\}\n\t\\item first\n\\end\{enumerate\}/.test(v), "list block inserted: " + JSON.stringify(v.slice(-60)));
+    assert(/\\begin\{enumerate\}\n  \\item first\n\\end\{enumerate\}/.test(v), "list block inserted: " + JSON.stringify(v.slice(-60)));
   },
 
   async enter_after_begin_adds_end({ page, base }) {
