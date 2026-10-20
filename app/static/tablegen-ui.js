@@ -426,16 +426,9 @@ function tgLoadFromEditor(hit, quiet) {
   tgRenderOutput();
 }
 
-function tgPreamble() {
-  const root = (typeof renderMain === "function" && renderMain()) || (state.project && state.project.main_path);
-  const text = (root && state.contents[root]) || "";
-  const i = text.indexOf("\\begin{document}");
-  return { root, text, at: i };
-}
-
 function tgMissingPackages(packages) {
   if (!state.project) return [];
-  const { text, at } = tgPreamble();
+  const { text, at } = rootPreamble();
   return TableGen.missingPackages(at >= 0 ? text.slice(0, at) : text, packages);
 }
 
@@ -462,25 +455,7 @@ async function tgInsert() {
 }
 
 async function tgAddPackages(missing) {
-  const { root, text, at } = tgPreamble();
-  if (!root || at < 0) return;
-  const line = `\\usepackage{${missing.join(",")}} % added by the table generator\n`;
-  if (root === state.activeFile) {
-    const ta = $("#source");
-    const pos = ta.value.indexOf("\\begin{document}");
-    if (pos >= 0) {
-      const keep = [ta.selectionStart, ta.selectionEnd];
-      edInsert(pos, pos, line);
-      ta.setSelectionRange(keep[0] + line.length, keep[1] + line.length);
-    }
-    return;
-  }
-  const updated = text.slice(0, at) + line + text.slice(at);
-  state.contents[root] = updated;
-  try {
-    await api("PUT", `/api/projects/${state.project.id}/files/${root}`, { content: updated });
-    markPreviewStale();
-  } catch (e) { alert("Could not update the preamble: " + e.message); }
+  await addToPreamble(`\\usepackage{${missing.join(",")}} % added by the table generator\n`);
 }
 
 async function tgCopy() {

@@ -1,0 +1,14 @@
+diff --git a/packages/app/src/ui/canvas-panel/CanvasPanel.module.css b/packages/app/src/ui/canvas-panel/CanvasPanel.module.css
+index b0fef69..6d697c8 100644
+--- a/packages/app/src/ui/canvas-panel/CanvasPanel.module.css
++++ b/packages/app/src/ui/canvas-panel/CanvasPanel.module.css
+@@ -235,7 +235,8 @@
+   background-image: none;
+ }
+ 
+-.svgLayer :global(svg) {
++/* Only the picture's own <svg>: nested ones (node text) keep their size. */
++.svgLayer :global(svg):not(:global(svg svg)) {
+   display: block;
+   width: 100%;
+   height: 100%;
