@@ -342,6 +342,19 @@ button { font-family: var(--font); cursor: pointer; border: 1px solid transparen
 .split.dragging { user-select: none; }
 .preview-head { height: 34px; flex: none; display: flex; align-items: center; gap: 8px; padding: 0 10px 0 14px; border-bottom: 1px solid var(--border); background: var(--bg-elevated); }
 .preview-stale { font-size: 10px; color: var(--warning); background: var(--warning-bg); padding: 1px 6px; border-radius: 4px; }
+.preview-status { font-family: var(--mono); font-size: 10.5px; color: var(--text-4); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.preview-status.fell-back { color: var(--text-3); text-decoration: underline dotted; cursor: help; }
+.seg-toggle { display: inline-flex; background: var(--bg-shell); border: 1px solid var(--border); border-radius: 7px; padding: 2px; gap: 2px; flex: none; }
+.seg-toggle button { border: none; background: none; font-size: 11px; font-weight: 500; color: var(--text-3); padding: 2px 8px; border-radius: 5px; cursor: pointer; }
+.seg-toggle button:hover { color: var(--text-1); }
+.seg-toggle button.active { background: var(--bg-content); color: var(--text-1); box-shadow: var(--shadow-sm); }
+/* sync anchors are invisible; marker-only paragraphs take no space */
+.preview-doc .sl { display: inline; }
+.preview-doc p.srcmark { margin: 0 auto; height: 0; line-height: 0; overflow: hidden; }
+.preview-doc .sync-flash { animation: syncflash 1.2s ease-out; border-radius: 4px; }
+@keyframes syncflash { 0% { background: var(--warning-bg); box-shadow: 0 0 0 6px var(--warning-bg); } 100% { background: transparent; box-shadow: 0 0 0 6px transparent; } }
+.line-flash { position: absolute; left: 0; right: 0; height: 1.7em; font-size: 12.5px; pointer-events: none; z-index: 2; background: var(--warning-bg); opacity: .8; animation: linefade 1.1s ease-out forwards; }
+@keyframes linefade { to { opacity: 0; } }
 
 /* ── Report panel ────────────────────────────────────── */
 .report-body { flex: 1; min-height: 0; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 14px; }

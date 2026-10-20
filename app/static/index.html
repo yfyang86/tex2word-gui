@@ -152,8 +152,13 @@
           <div class="preview-head">
             <span class="eyebrow">Preview</span>
             <span class="preview-stale" id="preview-stale" hidden>stale</span>
+            <span class="preview-status" id="preview-status"></span>
             <div class="spacer"></div>
-            <button class="icon-btn" id="btn-refresh-preview" title="Refresh preview">
+            <div class="seg-toggle" role="group" aria-label="Preview update mode">
+              <button data-pmode="quick" title="Quick: re-render only the blocks you edit (falls back to a full render when it must)">Quick</button>
+              <button data-pmode="full" title="Full: re-render the whole document after every edit">Full</button>
+            </div>
+            <button class="icon-btn" id="btn-refresh-preview" title="Full refresh (re-render everything)">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none"><path d="M23 4v6h-6M1 20v-6h6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             </button>
           </div>
@@ -316,6 +321,8 @@
     </div>
   </div>
 
+  <script src="/static/sync.js"></script>
+  <script src="/static/complete.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

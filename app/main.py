@@ -13,7 +13,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__, assistant, ingest, llm, service, skills
+from . import __version__, assistant, ingest, llm, service, skills, sourcemap
+from .livepreview import PreviewEngine, PreviewError
 from .auth import AuthError, Authenticator
 from .chat import ChatError, ConversationStore
 from .config import get_config
@@ -34,6 +35,7 @@ from .models import (
     PreviewRequest,
     PreviewResponse,
     ProjectConvertRequest,
+    ProjectPreviewRequest,
     ProjectCreate,
     ProjectUpdate,
     SettingsUpdate,
@@ -66,6 +68,7 @@ skill_store = SkillStore(projects.db)
 chats = ConversationStore(projects.db)
 job_store = JobStore(projects.db)
 job_queue = JobQueue()
+preview_engine = PreviewEngine()  # cached parses for full/quick live preview
 rate_limiter = RateLimiter(enabled=config.security.rate_limit_enabled)
 
 # Optional account auth (opt-in via [auth].enabled). Building it never fails the
@@ -206,10 +209,20 @@ def _safe_filename(name: str, default: str = "document.docx") -> str:
 
 
 def _effective_main(project, override: str | None) -> str:
-    """Use the requested file as the document root if it exists in the project;
-    otherwise fall back to the project's detected main file."""
-    if override and override in project.file_map():
-        return override
+    """The document root for a render/convert.
+
+    A requested file that can stand on its own (``\\documentclass`` /
+    ``\\begin{document}``) is used as-is — the "several mains" case. A requested
+    *fragment* (a chapter pulled in by ``\\input``) resolves to the root that
+    includes it, so editing a sub-file still previews the whole document.
+    Anything else falls back to the project's detected main file."""
+    files = project.file_map()
+    if override and override in files:
+        if sourcemap.is_root_source(files[override]):
+            return override
+        root = sourcemap.including_root(files, override, prefer=project.main_path)
+        if root:
+            return root
     return project.main_path
 
 
@@ -291,9 +304,9 @@ def download_artifact(artifact_id: str) -> Response:
 def preview(req: PreviewRequest) -> PreviewResponse:
     try:
         options = service.ConvertOptions.from_payload(req.options.model_dump())
-        result = service.run_source(req.source, options)
+        doc, report = service.parse_source(req.source, options)
         data = service.preview(
-            result, number_by_section=options.number_by_section,
+            _Parsed(doc, report), number_by_section=options.number_by_section,
             fig_html=service.make_figure_html(),  # inline TikZ → rasterised
         )
     except service.ConversionError as exc:
@@ -303,24 +316,39 @@ def preview(req: PreviewRequest) -> PreviewResponse:
     return PreviewResponse(**data)
 
 
+class _Parsed:
+    """A parse-only stand-in for ``ConversionResult`` (no .docx built)."""
+
+    def __init__(self, document, report) -> None:
+        self.document, self.report = document, report
+
+
 @app.post("/api/projects/{project_id}/preview", response_model=PreviewResponse)
-def preview_project(project_id: str, req: ProjectConvertRequest) -> PreviewResponse:
+def preview_project(project_id: str, req: ProjectPreviewRequest) -> PreviewResponse:
     project = projects.get(project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="project not found")
     try:
         options = service.ConvertOptions.from_payload(req.options.model_dump())
         main = _effective_main(project, req.main_path)
-        assets = projects.assets(project_id)
-        result = service.run_project(project.file_map(), main, options, assets)
         asset_url = lambda p: f"/api/projects/{project_id}/files/{quote(p)}/raw"
-        data = service.preview(
-            result,
-            number_by_section=options.number_by_section,
-            asset_url=asset_url,
-            fig_html=service.make_figure_html(assets, asset_url=asset_url),
+        assets = service.LazyAssets(lambda: projects.assets(project_id))
+        fig_html = service.make_figure_html(assets, asset_url=asset_url)
+        files = project.file_map()
+        if options.frontend != "pure":  # LaTeXML: whole pipeline, no source map
+            result = service.run_project(files, main, options, projects.assets(project_id))
+            data = service.preview(result, number_by_section=options.number_by_section,
+                                   asset_url=asset_url, fig_html=fig_html)
+            data["main_path"] = main
+            return PreviewResponse(**data)
+        csl = options.csl if (options.csl in files and options.csl.lower().endswith(".csl")) else None
+        data = preview_engine.render(
+            (project_id, main, csl), files, main,
+            number_by_section=options.number_by_section, csl=csl,
+            mode=req.mode, base_rev=req.base_rev, asset_url=asset_url, fig_html=fig_html,
         )
-    except service.ConversionError as exc:
+        data["report"] = service.report_to_dict(data["report"])
+    except (service.ConversionError, PreviewError) as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     except Exception as exc:  # render bug → readable message, not a raw 500
         raise HTTPException(status_code=500, detail=f"preview failed: {exc}") from exc
@@ -483,6 +511,7 @@ def put_memory(project_id: str, req: MemoryUpdate) -> dict:
 def delete_project(project_id: str) -> Response:
     if not projects.delete(project_id):
         raise HTTPException(status_code=404, detail="project not found")
+    preview_engine.forget(lambda key: key[0] == project_id)
     return Response(status_code=204)
 
 

@@ -144,17 +144,96 @@ function _measureLineTop(ta, line) {
   return marker.offsetTop;
 }
 
-function _scrollEditorToLine(line) {
+function _scrollEditorToLine(line, flash) {
   const ta = $("#source");
   line = Math.max(0, line);
   const idx = _lineStartIndex(ta.value, line);
   try { ta.focus({ preventScroll: true }); ta.setSelectionRange(idx, idx); } catch (_) {}
-  ta.scrollTop = Math.max(0, _measureLineTop(ta, line) - ta.clientHeight * 0.3);
+  const top = _measureLineTop(ta, line);
+  ta.scrollTop = Math.max(0, top - ta.clientHeight * 0.3);
   syncHighlightScroll();
+  if (flash) flashEditorLine(top - ta.scrollTop);
 }
 
-// Editor caret → scroll the preview to the matching place.
-function syncEditorToPreview() {
+// A transient band over the target line (no selection: typing stays safe).
+function flashEditorLine(y) {
+  const wrap = $("#code-wrap");
+  const band = document.createElement("div");
+  band.className = "line-flash";
+  band.style.top = y + "px";
+  wrap.appendChild(band);
+  setTimeout(() => band.remove(), 1100);
+}
+
+// Sync anchors (data-src="fileIndex:line") in the preview → [{el, file, line}].
+function previewAnchors() {
+  if (state.anchors) return state.anchors;
+  const files = (state.preview && state.preview.source_map && state.preview.source_map.files) || [];
+  state.anchors = [...$("#preview-doc").querySelectorAll("[data-src]")]
+    .map((el) => ({ el, ...TexSync.parseSrc(el.dataset.src, files) }))
+    .filter((a) => a.file != null);
+  return state.anchors;
+}
+
+function hasSourceMap() {
+  return !!(state.preview && state.preview.source_map && previewAnchors().length);
+}
+
+function _withY(anchors, container) {
+  const base = container.getBoundingClientRect().top - container.scrollTop;
+  return anchors.map((a) => ({ ...a, y: a.el.getBoundingClientRect().top - base }));
+}
+
+function flashPreviewBlock(el) {
+  const pv = $("#preview-doc");
+  let seg = el;
+  while (seg && seg.parentElement !== pv) seg = seg.parentElement;
+  if (!seg) return;
+  seg.classList.remove("sync-flash"); void seg.offsetWidth;  // restart the animation
+  seg.classList.add("sync-flash");
+  setTimeout(() => seg.classList.remove("sync-flash"), 1200);
+}
+
+// Editor caret → preview, via the source map (works across \input files).
+function syncEditorToPreview(e) {
+  if (!state.previewVisible || !state.preview || isBinary(state.activeFile)) return;
+  if (!hasSourceMap()) return headingSyncEditorToPreview();
+  const pv = $("#preview-doc"), ta = $("#source");
+  const files = state.preview.source_map.files;
+  const includes = (state.preview.source_map.includes || [])
+    .map(([f, line, t]) => ({ file: files[f], line, target: files[t] }));
+  const locate = () => TexSync.editorToPreview(_withY(previewAnchors(), pv),
+                                                state.activeFile, _caretLine(ta) + 1, includes);
+  const hit = locate();
+  if (!hit) return;
+  pv.scrollTo({ top: Math.max(0, hit.y - pv.clientHeight * 0.3) });
+  // off-screen blocks may only get their real size once scrolled into view
+  requestAnimationFrame(() => {
+    const again = locate();
+    if (again) pv.scrollTo({ top: Math.max(0, again.y - pv.clientHeight * 0.3) });
+    if (e && e.type === "click") flashPreviewBlock(hit.anchor.el);
+  });
+}
+
+// Click in the preview → open the right file at the right line.
+async function syncPreviewToEditor(e) {
+  if (!state.preview) return;
+  if (e.target.closest("a[href]")) return;  // let links (refs) behave as links
+  if (!hasSourceMap()) return headingSyncPreviewToEditor(e);
+  const pv = $("#preview-doc");
+  const y = e.clientY - pv.getBoundingClientRect().top + pv.scrollTop;
+  const hit = TexSync.previewToEditor(_withY(previewAnchors(), pv), y);
+  if (!hit) return;
+  if (hit.file !== state.activeFile) {
+    if (!fileMeta(hit.file)) return;
+    await openFile(hit.file, { line: hit.line });
+  } else {
+    _scrollEditorToLine(hit.line - 1, true);
+  }
+}
+
+// Fallback without a source map: match source headings to preview headings.
+function headingSyncEditorToPreview() {
   if (!state.previewVisible || !state.preview || isBinary(state.activeFile)) return;
   const pv = $("#preview-doc"), ta = $("#source");
   const line = _caretLine(ta);
@@ -181,8 +260,7 @@ function syncEditorToPreview() {
   pv.scrollTo({ top: Math.max(0, target - 12), behavior: "smooth" });
 }
 
-// Click in the preview → scroll the editor to the matching source line.
-function syncPreviewToEditor(e) {
+function headingSyncPreviewToEditor(e) {
   if (!state.preview || isBinary(state.activeFile)) return;
   const pv = $("#preview-doc"), ta = $("#source");
   const pairs = _syncPairs()
@@ -218,6 +296,14 @@ const state = {
   contents: {},    // path -> in-memory content (may differ from server until saved)
   rtab: "report",  // report | structure | assistant
   preview: null,   // last preview payload
+  previewMode: "quick", // quick (incremental) | full — auto-refresh strategy
+  previewRev: null, // server revision of the segments currently shown
+  previewStale: false,
+  previewInflight: false,
+  previewQueued: null,
+  reconcileTimer: null,
+  rootFile: null,  // sticky render root (a file with \documentclass)
+  anchors: null,   // cached sync anchors [{el, file, line}]
   previewVisible: false,
   splitRatio: 0.55,// source fraction of the editor split
   previewTimer: null,
@@ -338,7 +424,10 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   $("#preview-doc").addEventListener("click", syncPreviewToEditor);
   $("#btn-toggle-preview").addEventListener("click", () => togglePreview());
-  $("#btn-refresh-preview").addEventListener("click", () => ensurePreview(true));
+  $("#btn-refresh-preview").addEventListener("click", () => requestPreview("full"));
+  document.querySelectorAll("[data-pmode]").forEach((b) =>
+    b.addEventListener("click", () => setPreviewMode(b.dataset.pmode)));
+  setPreviewMode(loadPreviewMode());
   setupSplitDivider();
   setupPanels();
   document.querySelectorAll("[data-rtab]").forEach((b) =>
@@ -685,7 +774,8 @@ async function openProject(id) {
   state.contents = {};
   for (const f of p.files) if (!f.is_binary) state.contents[f.path] = f.content || "";
   applySettings(p.settings);
-  state.preview = null;
+  resetPreviewState();
+  state.rootFile = p.main_path;
   state.lastReport = null;
   setCrumb(p.name);
   setScreen("workspace");
@@ -695,6 +785,7 @@ async function openProject(id) {
   state.previewVisible = false;
   $("#preview-doc").innerHTML = "";
   $("#preview-stale").hidden = true;
+  $("#preview-status").textContent = "";
   $("#btn-toggle-preview").textContent = "Show preview";
   applySplit();
   setReportTab("report");
@@ -806,12 +897,13 @@ async function renameFile(path) {
     state.project.main_path = np;
   }
   if (state.activeFile === path) state.activeFile = np;
-  state.preview = null;
+  if (state.rootFile === path) state.rootFile = np;
+  markPreviewStale();
   renderFiles();
   if (state.activeFile === np) { $("#editor-tab").textContent = np; }
 }
 
-async function openFile(path) {
+async function openFile(path, opts) {
   if (!path) {
     state.activeFile = null; $("#editor-tab").textContent = "—";
     $("#source").value = ""; updateHighlight(); return;
@@ -831,9 +923,12 @@ async function openFile(path) {
     updateHighlight();
     $("#source").scrollTop = 0; syncHighlightScroll();
   }
+  // a standalone .tex becomes the render root; fragments keep the current one
+  const prevRoot = state.rootFile;
+  if (/\.tex$/i.test(path) && !isBinary(path) && isRootSource(state.contents[path])) state.rootFile = path;
   renderFiles();
-  // the render target follows the active .tex — refresh the preview if shown
-  if (state.previewVisible) { state.preview = null; ensurePreview(true); }
+  if (opts && opts.line) _scrollEditorToLine(opts.line - 1, true);
+  if (state.previewVisible && state.rootFile !== prevRoot) requestPreview("full");
 }
 
 function showAsset(path) {
@@ -918,7 +1013,7 @@ async function uploadAsset(file) {
     state.files = state.files.filter((f) => f.path !== path);
     state.files.push(meta);
     delete state.contents[path];
-    state.preview = null;
+    markPreviewStale();
     renderFiles();
     openFile(path);
   } catch (e) { alert("Upload failed: " + e.message); }
@@ -940,7 +1035,8 @@ async function deleteFile(path) {
   delete state.contents[path];
   state.files = state.files.filter((f) => f.path !== path);
   if (state.activeFile === path) state.activeFile = null;
-  state.preview = null;
+  if (state.rootFile === path) state.rootFile = state.project.main_path;
+  markPreviewStale();
   renderFiles();
   openFile(state.files.map((f) => f.path).sort()[0]);
 }
@@ -993,15 +1089,21 @@ async function saveSettings() {
   } catch (e) { alert("Save failed: " + e.message); }
 }
 
-// The clicked .tex file is the render/convert root; otherwise the server uses
-// the project's detected main (the file with \documentclass / \begin{document}).
+// The render/convert root is sticky: opening a file that can stand on its own
+// (\documentclass / \begin{document}) makes it the root; opening a fragment
+// pulled in by \input keeps the current root, so the whole document stays in
+// the preview while you edit a chapter.
+function isRootSource(text) {
+  const code = (text || "").replace(/(^|[^\\])%[^\n]*/g, "$1");
+  return /\\documentclass|\\begin\{document\}/.test(code);
+}
+
 function effectiveMain() {
-  const f = state.activeFile;
-  return (f && /\.tex$/i.test(f)) ? f : null;
+  return state.rootFile || null;
 }
 
 function renderMain() {
-  return effectiveMain() || (state.project && state.project.main_path);
+  return state.rootFile || (state.project && state.project.main_path);
 }
 
 // Poll an async conversion job until it finishes (or we give up).
@@ -1168,11 +1270,14 @@ function setupPanels() {
 }
 
 function markPreviewStale() {
-  state.preview = null;
+  state.previewStale = true;
+  clearTimeout(state.reconcileTimer);
   if (!state.previewVisible) return;
   $("#preview-stale").hidden = false;
   clearTimeout(state.previewTimer);
-  state.previewTimer = setTimeout(() => ensurePreview(true), 900);
+  const quick = state.previewMode === "quick" && state.preview;
+  state.previewTimer = setTimeout(() => requestPreview(quick ? "quick" : "full"),
+                                  quick ? QUICK_DELAY : FULL_DELAY);
 }
 
 function setReportTab(tab) {
@@ -1527,36 +1632,141 @@ function writeToFile(text) {
   markPreviewStale();
 }
 
-async function ensurePreview(force) {
-  if (state.preview && !force) { renderPreview(); $("#preview-stale").hidden = true; return; }
+// ── Live preview: full / quick renders + segment patching ──
+// Full: the server re-parses the whole project. Quick: it re-parses only the
+// chunks you edited (or says why it fell back to full). Either way the reply
+// carries keyed segments; we swap only the blocks whose key changed, so the
+// preview keeps its scroll position and untouched math is never re-laid-out.
+// After a burst of quick updates, a background full render reconciles.
+const PREVIEW_MODE_KEY = "tw_preview_mode";
+const QUICK_DELAY = 300, FULL_DELAY = 900, RECONCILE_DELAY = 4000;
+const PRIORITY = { quick: 1, reconcile: 2, full: 3 };
+
+function loadPreviewMode() {
+  try { return localStorage.getItem(PREVIEW_MODE_KEY) === "full" ? "full" : "quick"; } catch { return "quick"; }
+}
+
+function setPreviewMode(mode) {
+  state.previewMode = mode;
+  try { localStorage.setItem(PREVIEW_MODE_KEY, mode); } catch { /* private mode */ }
+  document.querySelectorAll("[data-pmode]").forEach((b) =>
+    b.classList.toggle("active", b.dataset.pmode === mode));
+}
+
+function resetPreviewState() {
+  state.preview = null; state.previewRev = null; state.previewStale = false;
+  state.anchors = null;
+  clearTimeout(state.previewTimer); clearTimeout(state.reconcileTimer);
+}
+
+// kind: "full" (replace everything) | "reconcile" (full parse, patch) | "quick"
+async function requestPreview(kind) {
+  if (!state.project || !state.previewVisible) return;
+  if (state.previewInflight) {
+    if (!state.previewQueued || PRIORITY[kind] > PRIORITY[state.previewQueued]) state.previewQueued = kind;
+    return;
+  }
   clearTimeout(state.previewTimer);
+  if (kind !== "reconcile") clearTimeout(state.reconcileTimer);
+  const pid = state.project.id;
+  const patch = kind !== "full" && state.preview && state.previewRev != null;
+  const body = {
+    options: readOptions(), main_path: effectiveMain(),
+    mode: kind === "quick" ? "quick" : "full",
+    base_rev: patch ? state.previewRev : null,
+  };
+  state.previewInflight = true;
   const doc = $("#preview-doc");
-  doc.innerHTML = `<div class="placeholder">Rendering preview…</div>`;
-  if (state.dirty) await saveActive(false);
+  if (!state.preview) doc.innerHTML = `<div class="placeholder">Rendering preview…</div>`;
+  $("#preview-status").textContent = kind === "quick" ? "updating…" : "rendering…";
   try {
-    state.preview = await api("POST", `/api/projects/${state.project.id}/preview`,
-      { options: readOptions(), main_path: effectiveMain() });
-    renderPreview();
-    renderStructure();
-    $("#preview-stale").hidden = true;
+    if (state.dirty) await saveActive(false);
+    const data = await api("POST", `/api/projects/${pid}/preview`, body);
+    if (!state.project || state.project.id !== pid) return;  // switched project meanwhile
+    if (!applyPreview(data, patch)) {
+      state.previewQueued = "full";  // lost sync with the server: start over
+    } else if (data.mode === "quick" && !state.previewQueued) {
+      state.reconcileTimer = setTimeout(() => requestPreview("reconcile"), RECONCILE_DELAY);
+    }
   } catch (e) {
+    state.preview = null; state.previewRev = null;
     doc.innerHTML = `<div class="banner error" style="margin:14px">${esc(e.message)}</div>`;
+    $("#preview-status").textContent = "";
+  } finally {
+    state.previewInflight = false;
+    const next = state.previewQueued;
+    state.previewQueued = null;
+    if (next) requestPreview(next);
   }
 }
 
-function renderPreview() {
-  const pv = $("#preview-doc");
-  let html = state.preview ? state.preview.html : `<div class="placeholder">No preview.</div>`;
+function withTokenHtml(html) {
   // server-embedded figure URLs (/…/raw) need the session token under auth
-  if (state.preview && state.authEnabled && state.token) {
-    html = html.replace(/\/raw"/g, `/raw?access_token=${encodeURIComponent(state.token)}"`);
+  if (state.authEnabled && state.token) {
+    return html.replace(/\/raw"/g, `/raw?access_token=${encodeURIComponent(state.token)}"`);
   }
-  pv.innerHTML = html;
+  return html;
+}
+
+function htmlToElement(html) {
+  const t = document.createElement("template");
+  t.innerHTML = withTokenHtml(html);
+  return t.content.firstElementChild;
+}
+
+// Apply a preview payload; returns false if a patch could not be applied.
+function applyPreview(data, patch) {
+  const pv = $("#preview-doc");
+  const segs = data.segments || [];
+  let changed = segs.length;
+  if (patch) {
+    const kids = [...pv.children];
+    const plan = TexSync.planPatch(kids.map((el) => el.dataset.k || ""), segs);
+    if (!plan) return false;
+    plan.remove.forEach((i) => kids[i].remove());
+    changed = 0;
+    segs.forEach(([, html], i) => {
+      let el = plan.take[i] >= 0 ? kids[plan.take[i]] : htmlToElement(html);
+      if (plan.take[i] < 0) changed++;
+      if (pv.children[i] !== el) pv.insertBefore(el, pv.children[i] || null);
+    });
+  } else {
+    const top = pv.scrollTop;
+    pv.innerHTML = withTokenHtml(segs.map(([, h]) => h).join("")) ||
+      `<div class="placeholder">Empty document.</div>`;
+    pv.scrollTop = top;
+  }
   // Large docs: let the browser skip laying out off-screen blocks
-  // (content-visibility "page pool") so hundreds of MathML nodes don't all
-  // render at once. Every block stays in the DOM, so anchors/scroll-sync work.
-  const heavy = !!state.preview && (pv.children.length > 60 || html.length > 60000);
-  pv.classList.toggle("virtualized", heavy);
+  // (content-visibility) so hundreds of MathML nodes don't all render at once.
+  pv.classList.toggle("virtualized", pv.children.length > 60);
+  state.preview = data;
+  state.previewRev = data.rev;
+  state.previewStale = false;
+  state.anchors = null;
+  if (data.main_path) state.rootFile = data.main_path;
+  $("#preview-stale").hidden = true;
+  renderPreviewStatus(data, changed);
+  renderStructure();
+  renderFiles();
+  return true;
+}
+
+function renderPreviewStatus(data, changed) {
+  const st = $("#preview-status");
+  const t = data.timings ? `${Math.round(data.timings.total_ms)} ms` : "";
+  const blocks = (data.segments || []).length;
+  const parts = [data.mode || "full", t];
+  if (data.mode === "quick") parts.push(`${changed}/${blocks}`);
+  st.textContent = parts.filter(Boolean).join(" · ");
+  const detail = data.chunks ? `${data.chunks.reparsed} of ${data.chunks.total} chunks re-parsed, ` +
+    `${changed} of ${blocks} blocks updated` : "";
+  st.title = data.reason ? `Ran a full render: ${data.reason}.` : detail;
+  st.classList.toggle("fell-back", !!data.reason);
+}
+
+async function ensurePreview(force) {
+  if (state.preview && !force && !state.previewStale) return;
+  await requestPreview("full");
 }
 
 function renderStructure() {
