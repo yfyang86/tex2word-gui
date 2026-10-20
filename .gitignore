@@ -41,3 +41,7 @@ dist/
 Thumbs.db
 ehthumbs.db
 Desktop.ini
+
+# embedded TikZ editor: built by scripts/build_tikz_editor.sh, not committed
+.cache/
+app/static/vendor/tikz-editor/

@@ -113,6 +113,7 @@
         <button class="icon-btn" data-expand="files" title="Show files (Ctrl+B)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><polyline points="9 18 15 12 9 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <span class="rail-label" data-expand="files">Files</span>
         <button class="icon-btn rail-tool" data-tool="tablegen" title="Table generator"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" stroke-width="2"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16" stroke="currentColor" stroke-width="2"/></svg></button>
+        <button class="icon-btn rail-tool" data-tool="tikzedit" title="TikZ editor"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M5 18C8 5 15 19 19 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="5" cy="18" r="2.2" fill="currentColor"/><circle cx="19" cy="6" r="2.2" fill="currentColor"/></svg></button>
       </div>
       <div class="pane-head">
         <span class="eyebrow">Files</span>
@@ -131,6 +132,9 @@
         <div class="eyebrow">Tools</div>
         <button class="tool-row" data-tool="tablegen" title="Build a LaTeX table visually, or edit the table at the cursor">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" stroke-width="2"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16" stroke="currentColor" stroke-width="2"/></svg><span>Table generator</span>
+        </button>
+        <button class="tool-row" data-tool="tikzedit" title="Draw a TikZ figure visually, or edit the tikzpicture at the cursor">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M5 18C8 5 15 19 19 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="5" cy="18" r="2.2" fill="currentColor"/><circle cx="19" cy="6" r="2.2" fill="currentColor"/></svg><span>TikZ editor</span>
         </button>
       </div>
     </aside>
@@ -283,6 +287,36 @@
     </aside>
   </main>
 
+  <!-- ── TikZ editor (app/static/tikzedit-ui.js; embeds github.com/DominikPeters/tikz-editor) ── -->
+  <div id="tz-modal" class="modal tz-modal" hidden>
+    <div class="tz-card" role="dialog" aria-label="TikZ editor">
+      <div class="tz-top">
+        <span class="tg-title"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M5 18C8 5 15 19 19 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="5" cy="18" r="2.2" fill="currentColor"/><circle cx="19" cy="6" r="2.2" fill="currentColor"/></svg> TikZ editor</span>
+        <span class="tz-where" id="tz-where"></span>
+        <div class="spacer"></div>
+        <span class="tz-status" id="tz-status"></span>
+        <button class="btn-secondary" id="tz-cancel">Cancel</button>
+        <button class="btn-primary" id="tz-insert" disabled>Insert into editor</button>
+      </div>
+      <div class="tz-body" id="tz-body">
+        <div class="tz-missing" id="tz-missing" hidden>
+          <h3>The TikZ editor is not installed</h3>
+          <p>This tool embeds <a href="https://github.com/DominikPeters/tikz-editor" target="_blank" rel="noopener">TikZ Editor</a>
+            by Dominik Peters (MIT licence). Its browser bundle is built on the server, not shipped in the repository. From the
+            project folder, with Node.js 20 or newer installed, run:</p>
+          <pre>scripts/build_tikz_editor.sh</pre>
+          <p class="muted">The Docker image builds it automatically. Reload this page once the build finishes.</p>
+        </div>
+        <div class="tz-loading" id="tz-loading" hidden>Loading the TikZ editor…</div>
+      </div>
+      <div class="tz-foot muted">
+        Visual TikZ editing by <a href="https://github.com/DominikPeters/tikz-editor" target="_blank" rel="noopener">TikZ Editor</a>
+        (MIT) <span id="tz-version"></span>. Preamble styles, colours and libraries are loaded with the figure; only the
+        <code>tikzpicture</code> is written back, plus any new definitions to the preamble.
+      </div>
+    </div>
+  </div>
+
   <!-- ── table generator (app/static/tablegen-ui.js) ── -->
   <div id="tg-modal" class="modal tg-modal" hidden>
     <div class="tg-card" role="dialog" aria-label="Table generator">
@@ -393,7 +427,9 @@
   <script src="/static/symbols.js"></script>
   <script src="/static/complete.js"></script>
   <script src="/static/tablegen.js"></script>
+  <script src="/static/tikzedit.js"></script>
   <script src="/static/app.js"></script>
   <script src="/static/tablegen-ui.js"></script>
+  <script src="/static/tikzedit-ui.js"></script>
 </body>
 </html>

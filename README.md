@@ -62,6 +62,13 @@ essential module; the web app is a thin adapter around its IR and outputs.
   or booktabs style, caption, landscape, width (tabularx / scaled), long table.
   The code updates live and is inserted at the cursor — or replaces the table the
   cursor was in — with any missing `\usepackage` lines added to the preamble.
+- **TikZ editor** (left panel → Tools) — draw and edit TikZ figures visually with
+  [TikZ Editor](https://github.com/DominikPeters/tikz-editor) by Dominik Peters
+  (MIT), embedded in a dialog: canvas tools, drag-to-move, inspector, live code.
+  It opens on the `tikzpicture` at the cursor (or a new one) with the preamble's
+  `\tikzset` styles, colours and libraries loaded, and writes the picture back —
+  adding any new libraries or definitions to the preamble. The editor bundle is
+  built once with `scripts/build_tikz_editor.sh` (the Docker image does it).
 - **Collapsible, resizable side panels** — hide the files pane (**Ctrl/Cmd+B**)
   or the report/assistant pane (**Ctrl/Cmd+Alt+B**), drag their edges to resize;
   the layout is remembered per browser.
@@ -103,6 +110,9 @@ uv pip install -e ".[dev]"
 # run the app (dev, auto-reload)
 uv run uvicorn app.main:app --reload
 # open http://127.0.0.1:8000
+
+# optional: build the embedded TikZ editor (needs git + Node.js ≥ 20; ~1–2 min)
+scripts/build_tikz_editor.sh
 
 # run the tests
 uv run pytest                     # Python suite
@@ -288,12 +298,17 @@ app/
   static/        single-page UI (HTML/CSS/JS + design tokens); sync.js and
                  complete.js are DOM-free engines shared with the node tests;
                  symbols.js + symbols.svg are the symbol list and its sprite;
-                 tablegen.js (engine) + tablegen-ui.js the table generator
+                 tablegen.js (engine) + tablegen-ui.js the table generator;
+                 tikzedit.js + tikzedit-ui.js the TikZ editor dialog
+  static/vendor/tikz-editor/  built TikZ editor bundle (not committed)
+  tikzeditor.py  TikZ editor bundle detection + the CSP its pages get
 tests/           pytest suite (one file per area) + conftest
   js/            node unit tests for the frontend engines
   e2e/           Playwright end-to-end specs + runner (boots the app on a temp DB)
 manage.py        admin / DB management CLI (users, keys, db-info)
 scripts/build_symbols.py  regenerate app/static/symbols.svg from symbols.js
+scripts/build_tikz_editor.sh  build the embedded TikZ editor (pinned upstream commit)
+tools/tikz-editor-embed/  embed shell + host bridge + patches for that build
 config.sample.toml  configuration template (copy to config.toml)
 DEVELOPER-MANUAL.md  architecture & internals
 server.sh        start/stop/status/restart wrapper

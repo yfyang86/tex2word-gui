@@ -1667,11 +1667,45 @@ function setupPanels() {
   });
   // Ctrl/Cmd+B → files; Ctrl/Cmd+Alt+B → right panel (VS Code's side-bar keys).
   document.addEventListener("keydown", (e) => {
-    if ($("#view-workspace").hidden || !$("#tg-modal").hidden) return;  // the table generator owns Ctrl+B (bold)
+    // the table generator owns Ctrl+B (bold); the TikZ editor dialog covers the panels
+    if ($("#view-workspace").hidden || !$("#tg-modal").hidden || !$("#tz-modal").hidden) return;
     if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.code !== "KeyB") return;
     e.preventDefault();
     togglePanel(e.altKey ? "report" : "files");
   });
+}
+
+// The render root's preamble → {root, text, at} (`at`: offset of \begin{document}, or -1).
+function rootPreamble() {
+  const root = renderMain();
+  const text = (root && (root === state.activeFile ? $("#source").value : state.contents[root])) || "";
+  return { root, text, at: text.indexOf("\\begin{document}") };
+}
+
+// Insert `block` (whole lines) just before the root's \begin{document}. Used by
+// the table generator and the TikZ editor; a root other than the open file is
+// saved through the API.
+async function addToPreamble(block) {
+  const { root, text, at } = rootPreamble();
+  if (!root || at < 0) return false;
+  if (!block.endsWith("\n")) block += "\n";
+  if (root === state.activeFile) {
+    const ta = $("#source");
+    const keep = [ta.selectionStart, ta.selectionEnd];
+    edInsert(at, at, block);
+    ta.setSelectionRange(keep[0] + (keep[0] >= at ? block.length : 0), keep[1] + (keep[1] >= at ? block.length : 0));
+    return true;
+  }
+  const updated = text.slice(0, at) + block + text.slice(at);
+  state.contents[root] = updated;
+  try {
+    await api("PUT", `/api/projects/${state.project.id}/files/${root}`, { content: updated });
+    markPreviewStale();
+    return true;
+  } catch (e) {
+    alert("Could not update the preamble: " + e.message);
+    return false;
+  }
 }
 
 function markPreviewStale() {

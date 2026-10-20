@@ -13,3 +13,5 @@ Sprint
 DEVELOPER-MANUAL.md
 uv.lock
 .pytest_cache
+.cache
+app/static/vendor/tikz-editor

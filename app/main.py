@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__, assistant, ingest, llm, service, skills, sourcemap
+from . import __version__, assistant, ingest, llm, service, skills, sourcemap, tikzeditor
 from .livepreview import PreviewEngine, PreviewError
 from .auth import AuthError, Authenticator
 from .chat import ChatError, ConversationStore
@@ -95,6 +95,16 @@ def _bearer(request: Request) -> str | None:
         return header[7:].strip()
     # GETs for <img>/<a download> can't set headers — accept a query token too.
     return request.query_params.get("access_token")
+
+
+@app.middleware("http")
+async def tikz_editor_csp(request: Request, call_next):
+    """Serve the embedded TikZ editor's pages under a strict CSP (see tikzeditor.py)."""
+    response = await call_next(request)
+    if tikzeditor.is_bundle_path(request.url.path):
+        response.headers["Content-Security-Policy"] = tikzeditor.CSP
+        response.headers["X-Content-Type-Options"] = "nosniff"
+    return response
 
 
 @app.middleware("http")
@@ -246,6 +256,7 @@ def get_app_config() -> dict:
     data["tex2word_version"] = service.engine_version()
     data["app_version"] = __version__
     data["auth"] = {"enabled": authn.enabled}  # the live authenticator state
+    data["tools"] = {"tikz_editor": tikzeditor.info(STATIC_DIR)}
     return data
 
 

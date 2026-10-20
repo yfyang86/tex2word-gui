@@ -33,6 +33,18 @@ cp config.sample.toml config.toml   # fill in provider keys if using the assista
 uv run uvicorn app.main:app --reload
 ```
 
+The TikZ editor tool needs its browser bundle, built from a pinned commit of
+[DominikPeters/tikz-editor](https://github.com/DominikPeters/tikz-editor) (MIT)
+with git and Node.js ≥ 20:
+
+```bash
+scripts/build_tikz_editor.sh        # → app/static/vendor/tikz-editor/ (gitignored, ~50 MB)
+```
+
+To move to a newer upstream version, change `PINNED_REF` in that script, rebuild,
+check that `tools/tikz-editor-embed/patches/` still apply (drop any that upstream
+has fixed), and run `node tests/e2e/run.js tikzedit`.
+
 Open <http://localhost:8000>. Auth is off by default; to enable it see
 `manage.py` and the `[auth]` block in `config.sample.toml`.
 
