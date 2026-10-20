@@ -1,6 +1,6 @@
 [project]
 name = "tex2word-web"
-version = "0.1.1"
+version = "0.2.0"
 description = "Web workspace for converting LaTeX to Microsoft Word with tex2word."
 readme = "README.md"
 requires-python = ">=3.12"

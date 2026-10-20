@@ -53,7 +53,7 @@ STATIC_DIR = Path(__file__).parent / "static"
 
 config = get_config()
 
-app = FastAPI(title="Tex Word Studio", version="0.1.0")
+app = FastAPI(title="Tex Word Studio", version=__version__)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=config.frontend.cors_origins(),
