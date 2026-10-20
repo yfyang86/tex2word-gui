@@ -243,17 +243,45 @@ def normalize_arxiv_id(raw: str) -> str:
     return m.group("id")
 
 
-def _default_fetch(arxiv_id: str) -> bytes:
+# Defaults for the import limits; the app passes the configured values
+# ([import] max_archive_mb / max_archive_files in config.toml).
+DEFAULT_MAX_BYTES = 100 * 1024 * 1024
+DEFAULT_MAX_FILES = 500
+
+
+class IngestTooLarge(IngestError):
+    """The bundle exceeds the configured size/file-count limits."""
+
+
+def _mb(n: int) -> str:
+    mb = n / (1024 * 1024)
+    if mb >= 10:
+        return f"{mb:.0f} MB"
+    return f"{mb:.1f} MB" if mb >= 1 else f"{max(1, round(n / 1024))} KB"
+
+
+def _too_large(what: str, limit: int) -> IngestTooLarge:
+    return IngestTooLarge(
+        f"{what} is larger than the {_mb(limit)} import limit "
+        "(raise [import].max_archive_mb in config.toml)"
+    )
+
+
+def _default_fetch(arxiv_id: str, max_bytes: int = DEFAULT_MAX_BYTES) -> bytes:
+    """Download an e-print, refusing anything over ``max_bytes`` without
+    buffering more than the limit."""
     import urllib.request
 
     url = f"https://arxiv.org/e-print/{arxiv_id}"
     req = urllib.request.Request(url, headers={"User-Agent": "tex2word-web/0.1"})
-    with urllib.request.urlopen(req, timeout=30) as resp:  # noqa: S310 - fixed host
-        return resp.read()
-
-
-_MAX_FILES = 500
-_MAX_TOTAL_BYTES = 25 * 1024 * 1024  # 25 MB of extracted text
+    with urllib.request.urlopen(req, timeout=60) as resp:  # noqa: S310 - fixed host
+        length = resp.headers.get("Content-Length")
+        if length and length.isdigit() and int(length) > max_bytes:
+            raise _too_large(f"arXiv:{arxiv_id} source ({_mb(int(length))})", max_bytes)
+        data = resp.read(max_bytes + 1)
+    if len(data) > max_bytes:
+        raise _too_large(f"arXiv:{arxiv_id} source", max_bytes)
+    return data
 
 
 def _safe_name(name: str) -> str:
@@ -271,12 +299,17 @@ def _strip_common_prefix(members: dict[str, bytes]) -> dict[str, bytes]:
     return members
 
 
-def _extract_members(data: bytes) -> dict[str, bytes]:
+def _extract_members(
+    data: bytes, max_bytes: int = DEFAULT_MAX_BYTES, max_files: int = DEFAULT_MAX_FILES,
+) -> dict[str, bytes]:
     """Extract text + asset members from a zip, tar(.gz), or single gzipped tex.
 
     Member paths are sanitised (no traversal); a shared top-level folder is
-    stripped; bounded by file count/total size to resist archive bombs.
+    stripped; the archive itself and the extracted total are bounded by
+    ``max_bytes`` and the member count by ``max_files`` (archive bombs).
     """
+    if len(data) > max_bytes:
+        raise _too_large(f"the archive ({_mb(len(data))})", max_bytes)
     members: dict[str, bytes] = {}
     total = 0
     keep = _TEXT_EXT + _ASSET_EXT
@@ -287,29 +320,42 @@ def _extract_members(data: bytes) -> dict[str, bytes]:
         if not name or not name.lower().endswith(keep):
             return
         total += len(raw)
-        if total > _MAX_TOTAL_BYTES or len(members) >= _MAX_FILES:
-            raise IngestError("archive is too large")
+        if total > max_bytes:
+            raise _too_large("the extracted archive", max_bytes)
+        if len(members) >= max_files:
+            raise IngestTooLarge(
+                f"the archive has more than {max_files} source files "
+                "(raise [import].max_archive_files in config.toml)"
+            )
         members[name] = raw
 
     if zipfile.is_zipfile(io.BytesIO(data)):
         with zipfile.ZipFile(io.BytesIO(data)) as zf:
             for info in zf.infolist():
-                if not info.is_dir():
-                    _add(info.filename, zf.read(info))
+                if info.is_dir():
+                    continue
+                if info.file_size > max_bytes - total:  # declared size: fail before inflating
+                    raise _too_large("the extracted archive", max_bytes)
+                _add(info.filename, zf.read(info))
     else:
         try:
             tar = tarfile.open(fileobj=io.BytesIO(data))
         except tarfile.TarError:
             # a single gzipped .tex (some arXiv e-prints) rather than an archive
             try:
-                raw = gzip.decompress(data)
+                with gzip.GzipFile(fileobj=io.BytesIO(data)) as gz:
+                    raw = gz.read(max_bytes + 1)
             except Exception as exc:
                 raise IngestError(f"unrecognised archive: {exc}") from exc
+            if len(raw) > max_bytes:
+                raise _too_large("the extracted archive", max_bytes)
             return {"main.tex": raw}
         with tar:
             for member in tar.getmembers():
                 if not member.isfile():
                     continue
+                if member.size > max_bytes - total:  # declared size: fail before reading
+                    raise _too_large("the extracted archive", max_bytes)
                 fh = tar.extractfile(member)
                 if fh is not None:
                     _add(member.name, fh.read())
@@ -319,9 +365,11 @@ def _extract_members(data: bytes) -> dict[str, bytes]:
     return _strip_common_prefix(members)
 
 
-def archive_to_project(data: bytes) -> tuple[dict[str, str], dict[str, bytes]]:
+def archive_to_project(
+    data: bytes, max_bytes: int = DEFAULT_MAX_BYTES, max_files: int = DEFAULT_MAX_FILES,
+) -> tuple[dict[str, str], dict[str, bytes]]:
     """Split an archive into ``(text_files, binary_assets)``."""
-    members = _extract_members(data)
+    members = _extract_members(data, max_bytes, max_files)
     text: dict[str, str] = {}
     assets: dict[str, bytes] = {}
     for name, raw in members.items():
@@ -353,12 +401,13 @@ def _name_from_filename(filename: str | None) -> str:
 
 
 def from_archive(
-    name: str | None, filename: str | None, data: bytes
+    name: str | None, filename: str | None, data: bytes, *,
+    max_bytes: int = DEFAULT_MAX_BYTES, max_files: int = DEFAULT_MAX_FILES,
 ) -> tuple[str, dict[str, str], dict[str, bytes], str]:
     """Return ``(project_name, text_files, assets, main_path)`` for an archive."""
     if not data:
         raise IngestError("uploaded archive is empty")
-    text, assets = archive_to_project(data)
+    text, assets = archive_to_project(data, max_bytes, max_files)
     main_path = pick_main(text)
     proj_name = (name or "").strip() or _name_from_filename(filename)
     return proj_name, text, assets, main_path
@@ -380,16 +429,19 @@ def pick_main(files: dict[str, str]) -> str:
 
 
 def from_arxiv(
-    arxiv_id: str, fetch: Callable[[str], bytes] | None = None
+    arxiv_id: str, fetch: Callable[[str], bytes] | None = None, *,
+    max_bytes: int = DEFAULT_MAX_BYTES, max_files: int = DEFAULT_MAX_FILES,
 ) -> tuple[str, dict[str, str], dict[str, bytes], str]:
     """Return ``(arxiv_id, text_files, assets, main_path)`` for an arXiv paper."""
     norm = normalize_arxiv_id(arxiv_id)
-    fetcher = fetch or _default_fetch
+    fetcher = fetch or (lambda aid: _default_fetch(aid, max_bytes))
     try:
         data = fetcher(norm)
     except IngestError:
         raise
     except Exception as exc:
         raise IngestError(f"could not download arXiv:{norm} — {exc}") from exc
-    text, assets = archive_to_project(data)
+    if len(data) > max_bytes:
+        raise _too_large(f"arXiv:{norm} source", max_bytes)
+    text, assets = archive_to_project(data, max_bytes, max_files)
     return norm, text, assets, pick_main(text)

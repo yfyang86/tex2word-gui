@@ -148,7 +148,7 @@ def test_markdown_to_tex_endpoint(client):
 
 def test_import_arxiv_endpoint(client, monkeypatch):
     tar = _make_tar({"main.tex": "\\documentclass{article}\\begin{document}\\section{Hi}x\\end{document}"})
-    monkeypatch.setattr(ingest, "_default_fetch", lambda _id: tar)
+    monkeypatch.setattr(ingest, "_default_fetch", lambda _id, max_bytes=None: tar)
     r = client.post("/api/projects/import/arxiv", json={"arxiv_id": "arXiv:2406.10817"})
     assert r.status_code == 201, r.text
     body = r.json()
@@ -224,8 +224,123 @@ def test_import_arxiv_bad_id_422(client):
 
 
 def test_import_arxiv_fetch_failure_502(client, monkeypatch):
-    def boom(_id):
+    def boom(_id, max_bytes=None):
         raise OSError("network unreachable")
     monkeypatch.setattr(ingest, "_default_fetch", boom)
     r = client.post("/api/projects/import/arxiv", json={"arxiv_id": "2406.10817"})
     assert r.status_code == 502
+
+
+# ── import size limits ([import].max_archive_mb / max_archive_files) ──────────
+def test_default_limit_is_100_mb():
+    assert ingest.DEFAULT_MAX_BYTES == 100 * 1024 * 1024
+    from app.config import ImportConfig
+    assert ImportConfig().max_archive_mb == 100 and ImportConfig().max_archive_bytes == ingest.DEFAULT_MAX_BYTES
+
+
+def test_size_formatting():
+    assert ingest._mb(100 * 1024 * 1024) == "100 MB"
+    assert ingest._mb(int(1.5 * 1024 * 1024)) == "1.5 MB"
+    assert ingest._mb(200_000) == "195 KB"
+
+
+def test_archive_over_the_limit_is_rejected():
+    import zipfile
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+        zf.writestr("main.tex", DOCCLASS)
+        zf.writestr("big.tex", "x" * 50_000)  # deflates to a few hundred bytes
+    data = buf.getvalue()
+    assert len(data) < 2000
+    with pytest.raises(ingest.IngestTooLarge, match="max_archive_mb"):
+        ingest.archive_to_project(data, max_bytes=len(data) - 1)  # the archive itself
+    with pytest.raises(ingest.IngestTooLarge, match="extracted"):
+        ingest.archive_to_project(data, max_bytes=len(data) + 100)  # ~50 KB of members
+    text, _ = ingest.archive_to_project(data, max_bytes=1024 * 1024)
+    assert "big.tex" in text
+
+
+def test_tar_and_single_gzip_respect_the_limit():
+    import gzip
+    tar = _make_tar({"main.tex": DOCCLASS + "y" * 4000})
+    with pytest.raises(ingest.IngestTooLarge):
+        ingest.archive_to_project(tar, max_bytes=len(tar) + 10)
+    gz = gzip.compress((DOCCLASS + "z" * 100_000).encode())  # compresses to ~1 KB
+    with pytest.raises(ingest.IngestTooLarge, match="extracted"):
+        ingest.archive_to_project(gz, max_bytes=50_000)
+    assert "main.tex" in ingest.archive_to_project(gz, max_bytes=200_000)[0]
+
+
+def test_file_count_limit():
+    data = _make_zip({"main.tex": DOCCLASS, **{f"s{i}.tex": "x" for i in range(5)}})
+    with pytest.raises(ingest.IngestTooLarge, match="max_archive_files"):
+        ingest.archive_to_project(data, max_files=3)
+    assert len(ingest.archive_to_project(data, max_files=6)[0]) == 6
+
+
+def test_from_arxiv_checks_the_download_size():
+    tar = _make_tar({"main.tex": DOCCLASS})
+    with pytest.raises(ingest.IngestTooLarge, match="arXiv:2406.10817"):
+        ingest.from_arxiv("2406.10817", fetch=lambda _id: tar, max_bytes=len(tar) - 1)
+
+
+def test_default_fetch_streams_with_a_cap(monkeypatch):
+    import urllib.request
+
+    class Resp(io.BytesIO):
+        def __init__(self, body, length):
+            super().__init__(body)
+            self.headers = {"Content-Length": length} if length else {}
+        def __enter__(self): return self
+        def __exit__(self, *a): self.close()
+
+    reads = []
+    def fake_open(body, length):
+        def opener(req, timeout=None):
+            r = Resp(body, length)
+            orig = r.read
+            r.read = lambda n=-1: reads.append(n) or orig(n)
+            return r
+        return opener
+
+    # declared too large → refused before reading the body
+    monkeypatch.setattr(urllib.request, "urlopen", fake_open(b"x" * 10, "999999"))
+    with pytest.raises(ingest.IngestTooLarge):
+        ingest._default_fetch("2406.10817", max_bytes=1000)
+    assert reads == []
+    # no Content-Length: reads at most limit+1 bytes, then refuses
+    monkeypatch.setattr(urllib.request, "urlopen", fake_open(b"x" * 5000, None))
+    with pytest.raises(ingest.IngestTooLarge):
+        ingest._default_fetch("2406.10817", max_bytes=1000)
+    assert reads == [1001]
+    monkeypatch.setattr(urllib.request, "urlopen", fake_open(b"ok", "2"))
+    assert ingest._default_fetch("2406.10817", max_bytes=1000) == b"ok"
+
+
+def test_import_endpoints_use_the_configured_limit_and_413(client, monkeypatch):
+    import app.main as m
+    tar = _make_tar({"main.tex": DOCCLASS + "w" * 3000})
+    monkeypatch.setattr(ingest, "_default_fetch", lambda _id, max_bytes=None: tar)
+    monkeypatch.setattr(m.config.imports, "max_archive_mb", 0)  # 0 MB: everything is too large
+    r = client.post("/api/projects/import/arxiv", json={"arxiv_id": "2406.10817"})
+    assert r.status_code == 413 and "max_archive_mb" in r.json()["detail"]
+    files = {"file": ("p.tar", tar, "application/x-tar")}
+    r = client.post("/api/projects/import/archive", files=files)
+    assert r.status_code == 413
+    monkeypatch.setattr(m.config.imports, "max_archive_mb", 100)
+    r = client.post("/api/projects/import/arxiv", json={"arxiv_id": "2406.10817"})
+    assert r.status_code == 201
+    client.delete(f"/api/projects/{r.json()['id']}")
+
+
+def test_archive_upload_may_exceed_the_general_body_cap(client, monkeypatch):
+    import app.main as m
+    tar = _make_tar({"main.tex": DOCCLASS})
+    monkeypatch.setattr(m.config.security, "max_body_mb", 0)   # generic cap: nothing fits
+    monkeypatch.setattr(m.config.imports, "max_archive_mb", 100)
+    files = {"file": ("p.tar", tar, "application/x-tar")}
+    r = client.post("/api/projects/import/archive", files=files)
+    assert r.status_code == 201, r.text
+    client.delete(f"/api/projects/{r.json()['id']}")
+    # other routes still get the generic cap
+    assert client.post("/api/preview", json={"source": "x"}).status_code == 413
