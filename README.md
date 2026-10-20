@@ -35,8 +35,23 @@ essential module; the web app is a thin adapter around its IR and outputs.
   own backend (install the `pdf` extra; TikZ also needs a TeX engine on `PATH`).
 - **Live preview** of the rendered document with typeset math (native MathML),
   a structure **outline** and **statistics** — in a resizable source⇄preview split
-  with **rough two-way scroll sync** (click the editor to follow in the preview,
-  click the preview to jump the editor).
+  with **two-way sync across files**: click the editor to follow in the preview,
+  click the preview to open the file it came from at that line, even through
+  `\input`/`\include`. Editing a chapter keeps the whole document in the preview.
+- **Quick / Full preview** — *Quick* re-parses only the blocks you edited and
+  swaps just those in the page (typically 50–150 ms on a full paper); it falls
+  back to a full render, and says why, whenever a local update could be wrong,
+  and reconciles with a full render once you pause. *Full* re-renders everything
+  on every change. Both skip building a `.docx`, so even full renders are ~2×
+  faster than before.
+- **Smart autocompletion** in the editor — commands (math-aware), environments
+  with block snippets and tabstops, `\ref` → labels (with what they label),
+  `\cite` → bibliography keys (author · year · title), project macros,
+  `\input`/`\includegraphics` paths and packages; Enter after `\begin{env}` adds
+  the `\end`. Unknown `\ref`/`\cite` keys are underlined.
+- **Collapsible, resizable side panels** — hide the files pane (**Ctrl/Cmd+B**)
+  or the report/assistant pane (**Ctrl/Cmd+Alt+B**), drag their edges to resize;
+  the layout is remembered per browser.
 - **tex-copilot assistant** — fix / polish / explain / ask over the current file
   and report, via a configurable LLM provider (Anthropic or any OpenAI-compatible).
   Replies **stream** in live, code suggestions apply through a **diff** (accept /
@@ -77,7 +92,9 @@ uv run uvicorn app.main:app --reload
 # open http://127.0.0.1:8000
 
 # run the tests
-uv run pytest
+uv run pytest                     # Python suite
+node --test tests/js/*.test.js    # frontend unit tests (sync + autocomplete engines)
+NODE_PATH=$(npm root -g) node tests/e2e/run.js   # browser end-to-end (Playwright + Chromium)
 ```
 
 ### Managing the server
@@ -192,10 +209,19 @@ none is selected, the detected main (the `\begin{document}` file) is used.
 | `GET`    | `/api/projects/{id}/files/{path}/raw` | — | the raw file bytes |
 | `DELETE` | `/api/projects/{id}/files/{path}` | — | 204 |
 | `POST`   | `/api/projects/{id}/convert` | `{options?, filename?, main_path?}` | `{artifact_id, filename, download_url, report}` |
-| `POST`   | `/api/projects/{id}/preview` | `{options?, main_path?}` | `{html, outline, statistics, report, title}` |
+| `POST`   | `/api/projects/{id}/preview` | `{options?, main_path?, mode?, base_rev?}` | `{html, segments, outline, statistics, report, title, mode, reason, rev, main_path, source_map, timings, chunks}` |
 | `POST`   | `/api/projects/import/markdown` | `{name, markdown}` | project detail (201) |
 | `POST`   | `/api/projects/import/arxiv` | `{arxiv_id}` | project detail (201) |
 | `POST`   | `/api/projects/import/archive` | multipart `file=<zip/tar>`, `name?` | project detail (201) |
+
+**Live preview:** `mode` is `"full"` (default) or `"quick"` (re-parse only the
+changed chunks; the reply's `mode`/`reason` say if it had to run as full).
+`segments` is `[[key, html], …]`, one keyed top-level element each; when the
+request's `base_rev` is the server's last `rev`, segments the client already has
+come back with `html: null` (and `html` itself is `null`). Elements carry
+`data-src="fileIndex:line"` sync anchors indexing `source_map.files`;
+`source_map.includes` lists `[file, line, target]` for every `\input`. A
+`main_path` that is a fragment resolves to the file that includes it.
 
 **Import:** Markdown is converted to a LaTeX document (mistune AST → LaTeX) and
 still converted to Word by tex2word; the original `.md` is kept. arXiv pulls the
@@ -223,7 +249,9 @@ curl -s localhost:8000/api/convert \
 app/
   main.py        FastAPI routes + static mount + error mapping
   service.py     tex2word boundary (convert / preview / to-latex / report)
-  preview.py     IR → HTML preview + outline + statistics
+  preview.py     IR → HTML preview (keyed segments) + outline + statistics
+  sourcemap.py   flatten \input with line origins + invisible sync markers
+  livepreview.py full / incremental ("quick") preview engine with fallbacks
   projects.py    project + file CRUD (over SQLite)
   db.py          SQLite connection + schema
   store.py       durable artifact store for converted .docx (SQLite)
@@ -238,8 +266,11 @@ app/
   skills.py      assistant skill registry (built-ins + custom)
   chat.py        persisted multi-turn conversations + messages
   models.py      pydantic schemas
-  static/        single-page UI (HTML/CSS/JS + design tokens)
+  static/        single-page UI (HTML/CSS/JS + design tokens); sync.js and
+                 complete.js are DOM-free engines shared with the node tests
 tests/           pytest suite (one file per area) + conftest
+  js/            node unit tests for the frontend engines
+  e2e/           Playwright end-to-end specs + runner (boots the app on a temp DB)
 manage.py        admin / DB management CLI (users, keys, db-info)
 config.sample.toml  configuration template (copy to config.toml)
 DEVELOPER-MANUAL.md  architecture & internals

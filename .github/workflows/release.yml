@@ -38,7 +38,10 @@ jobs:
 
       # Never publish a release from a red tree.
       - name: Check frontend JS syntax
-        run: node --check app/static/app.js
+        run: for f in app/static/*.js; do node --check "$f"; done
+
+      - name: Frontend unit tests
+        run: node --test tests/js/*.test.js
 
       - name: Run tests
         run: uv run pytest -q
