@@ -27,27 +27,47 @@ _PROVIDER_TYPES = {"openai", "claude"}
 class Provider:
     name: str
     type: str
-    model: str
+    model: str                      # the default model
     api_base: str
     # Resolved secret — present in memory only, never serialized.
     api_key: str | None = None
     # Name of the env var the key came from (if any), for diagnostics.
     api_key_env: str | None = None
+    models: list[str] = field(default_factory=list)   # selectable models
+    tools: bool = True              # the endpoint supports function calling
+    source: str = "config"          # "config" (config.toml) | "custom" (added in the app)
+    overridden: bool = False        # a config provider with in-app changes
+    key_source: str | None = None   # "stored" | "env" | "config" | None
+    key_hint: str = ""              # last 4 characters of a stored key
 
     @property
     def has_key(self) -> bool:
         return bool(self.api_key)
 
-    def public(self) -> dict[str, Any]:
-        """Redacted projection safe to return over the API."""
-        return {
+    def model_list(self) -> list[str]:
+        out = [m for m in self.models if m]
+        if self.model and self.model not in out:
+            out.insert(0, self.model)
+        return out
+
+    def public(self, *, manager: bool = False) -> dict[str, Any]:
+        """Redacted projection safe to return over the API (never the key)."""
+        data = {
             "name": self.name,
             "type": self.type,
             "model": self.model,
+            "models": self.model_list(),
             "api_base": self.api_base,
             "has_key": self.has_key,
             "api_key_env": self.api_key_env,
+            "tools": self.tools,
+            "source": self.source,
+            "overridden": self.overridden,
+            "key_source": self.key_source,
         }
+        if manager:
+            data["key_hint"] = self.key_hint
+        return data
 
 
 @dataclass(slots=True)
@@ -103,6 +123,9 @@ class SecurityConfig:
     rate_limit_per_min: int = 240        # general /api requests per IP
     heavy_rate_limit_per_min: int = 60   # convert / assistant / chat / import
     login_rate_limit_per_min: int = 10   # POST /api/auth/login
+    # master key for secrets stored in the database (provider API keys);
+    # TEX2WORD_SECRET_KEY overrides it. Created with mode 0600 on first use.
+    secret_key_path: str = "tex2word_secret.key"
 
     @property
     def max_body_bytes(self) -> int:
@@ -195,13 +218,19 @@ def _parse(data: dict[str, Any], source_path: str | None) -> Config:
                 f"provider {name!r}: type must be one of {sorted(_PROVIDER_TYPES)}"
             )
         api_key, api_key_env = _resolve_key(raw)
+        models = raw.get("models") or []
+        if not isinstance(models, list):
+            raise ValueError(f"provider {name!r}: models must be a list of names")
         providers[name] = Provider(
             name=name,
             type=ptype,
-            model=str(raw.get("model", "")),
+            model=str(raw.get("model", "") or (models[0] if models else "")),
             api_base=str(raw.get("api_base", "")),
             api_key=api_key,
             api_key_env=api_key_env,
+            models=[str(m) for m in models],
+            tools=bool(raw.get("tools", True)),
+            key_source=("config" if raw.get("api_key") else "env" if api_key else None),
         )
 
     be = data.get("backend") or {}
@@ -246,6 +275,7 @@ def _parse(data: dict[str, Any], source_path: str | None) -> Config:
         rate_limit_per_min=int(sec.get("rate_limit_per_min", 240)),
         heavy_rate_limit_per_min=int(sec.get("heavy_rate_limit_per_min", 60)),
         login_rate_limit_per_min=int(sec.get("login_rate_limit_per_min", 10)),
+        secret_key_path=str(sec.get("secret_key_path", "tex2word_secret.key")),
     )
 
     imp = data.get("import") or {}

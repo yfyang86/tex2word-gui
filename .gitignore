@@ -45,3 +45,6 @@ Desktop.ini
 # embedded TikZ editor: built by scripts/build_tikz_editor.sh, not committed
 .cache/
 app/static/vendor/tikz-editor/
+
+# master key for secrets stored in the DB (provider API keys) — never commit
+tex2word_secret.key

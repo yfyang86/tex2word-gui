@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__, assistant, ingest, llm, service, skills, sourcemap, tikzeditor
+from . import __version__, assistant, assistant_api, ingest, llm, service, skills, sourcemap, tikzeditor
 from .livepreview import PreviewEngine, PreviewError
 from .auth import AuthError, Authenticator
 from .chat import ChatError, ConversationStore
@@ -44,6 +44,8 @@ from .models import (
 )
 from .jobs import JobQueue, JobStore
 from .projects import ProjectError, ProjectStore
+from .prompts import PromptStore
+from .providers import ProviderError, ProviderRegistry, Settings
 from .security import RateLimiter
 from .skills import SkillStore
 from .store import ArtifactStore
@@ -66,6 +68,9 @@ store = ArtifactStore(projects.db)        # durable artifacts in the shared DB
 users = UserStore(projects.db)  # share the one SQLite connection
 skill_store = SkillStore(projects.db)
 chats = ConversationStore(projects.db)
+provider_registry = ProviderRegistry(config, projects.db)   # config.toml + in-app providers
+app_settings = Settings(projects.db)
+prompt_store = PromptStore(projects.db)
 job_store = JobStore(projects.db)
 job_queue = JobQueue()
 preview_engine = PreviewEngine()  # cached parses for full/quick live preview
@@ -84,6 +89,10 @@ except AuthError as exc:
         ttl_hours=config.auth.token_ttl_hours,
         issuer=config.auth.issuer,
     )
+
+assistant_api.bind(registry=provider_registry, projects=projects, chats=chats, skills=skill_store,
+                   prompts=prompt_store, settings=app_settings, authn=authn, config=config)
+app.include_router(assistant_api.router)
 
 # /api paths reachable without a session when auth is on.
 _OPEN_PATHS = {"/api/health", "/api/config", "/api/auth/login"}
@@ -146,7 +155,7 @@ async def body_limit(request: Request, call_next):
 def _rate_bucket(path: str) -> str:
     if path == "/api/auth/login":
         return "login"
-    if any(s in path for s in ("/convert", "/assistant", "/message", "/import/")):
+    if any(s in path for s in ("/convert", "/assistant", "/message", "/agent", "/import/", "/test")):
         return "heavy"
     return "gen"
 
@@ -268,6 +277,9 @@ def health() -> HealthResponse:
 def get_app_config() -> dict:
     """Redacted runtime configuration (no API keys are ever returned)."""
     data = config.public()
+    data["providers"] = [p.public() for p in provider_registry.list()]
+    defaults = provider_registry.defaults()
+    data["default_provider"], data["default_model"] = defaults["provider"], defaults["model"]
     data["tex2word_version"] = service.engine_version()
     data["app_version"] = __version__
     data["auth"] = {"enabled": authn.enabled}  # the live authenticator state
@@ -704,12 +716,6 @@ def coverage_html(request: Request) -> Response:
     )
 
 
-@app.get("/api/skills")
-def list_skills() -> list[dict]:
-    """Built-in + custom skills (drives the assistant's slash-command autocomplete)."""
-    return [s.public() for s in skills.all_skills(skill_store)]
-
-
 def _resolve_assistant(req: AssistantRequest):
     """Validate the skill/action + provider for an assistant request (raises 422).
 
@@ -727,9 +733,12 @@ def _resolve_assistant(req: AssistantRequest):
             )
         code = skill.is_code
     try:
-        provider = config.provider(req.provider)
-    except KeyError as exc:
+        provider, model = provider_registry.resolve(req.provider)
+    except ProviderError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if model != provider.model:
+        from dataclasses import replace
+        provider = replace(provider, model=model)
     if not provider.has_key:
         raise HTTPException(
             status_code=422,
@@ -848,8 +857,8 @@ def _chat_memory(cid: str, project_id: str | None, provider) -> tuple[list, str,
     summarize = None
     if cfg.rolling_summary:
         try:
-            sp = config.provider(cfg.summary_provider) if cfg.summary_provider else provider
-        except KeyError:
+            sp = provider_registry.resolve(cfg.summary_provider)[0] if cfg.summary_provider else provider
+        except ProviderError:
             sp = provider
         summarize = lambda prior, msgs: assistant.summarize(sp, prior, msgs)
     summary, history = chats.history_for_model(

@@ -81,15 +81,24 @@ essential module; the web app is a thin adapter around its IR and outputs.
   or the report/assistant pane (**Ctrl/Cmd+Alt+B**), drag their edges to resize;
   the layout is remembered per browser, and narrow windows fold the panels
   without changing it.
-- **tex-copilot assistant** — fix / polish / explain / ask over the current file
-  and report, via a configurable LLM provider (Anthropic or any OpenAI-compatible).
-  Replies **stream** in live, code suggestions apply through a **diff** (accept /
-  reject), and the **provider/model** is selectable. It's a **multi-turn chat**
-  (persisted per project, history-aware, with a rolling summary so long chats stay
-  bounded, plus editable **per-project memory**) and an **autocomplete** that
-  completes `@file` (pull a project file into context) and `/`-skills (`/fix` ·
-  `/polish` · `/explain`, plus any **custom skills** you add) as you type — skills
-  are served from `/api/skills` and managed with `manage.py`.
+- **tex-copilot assistant** — an **agent** that works on the project: it lists,
+  reads and searches files, outlines them, runs a tex2word **check**, and
+  proposes **edits** that you review per file (diff, apply / reject, conflict
+  detection) before anything is saved. **Chat** mode answers without tools.
+  Replies **stream** with Stop, render as safe Markdown (copy / insert code
+  blocks), and can be regenerated or edited & resent. Context chips carry the
+  open file, the selection and `@file` mentions; `/`-skills run templates.
+  Chats persist per project, with a rolling summary and per-project memory.
+- **Providers & models in the app** — add or edit OpenAI-compatible and
+  Anthropic providers (presets for OpenAI, Anthropic, DeepSeek, OpenRouter, Kimi,
+  Ollama, vLLM), their **model lists** (e.g. `deepseek-flash`, `deepseek-pro`;
+  fetch from `/models`) and default model, and **test the connection**. API keys
+  are **write-only** and **encrypted at rest** (AES-256-GCM; master key from
+  `TEX2WORD_SECRET_KEY` or a `0600` key file), or read from an env var.
+- **Skills & prompts** — create / edit / delete custom skills (agent or chat,
+  with `{file}` / `{selection}` / `{input}` placeholders; built-ins can be
+  duplicated) and saved prompts, plus standing instructions and the agent's step
+  limit. With `[auth]` on, this configuration is admin-only.
 - **Import** from **Markdown** (→ LaTeX → Word), an **arXiv** source bundle, or
   an uploaded **`.zip`/`.tar(.gz)`** archive of a LaTeX project.
 - **Coverage dashboard** — aggregate tex2word metrics (math OMML coverage,
@@ -157,7 +166,13 @@ which provider the assistant uses; `claude`-type providers go through the
 Anthropic SDK (default model `claude-opus-4-8`), `openai`-type providers through
 the OpenAI SDK against their `base_url` (DeepSeek, Kimi, Minimax, vLLM, …).
 Provider API keys are read from environment variables via `api_key_env`
-(preferred) or given inline with `api_key`. The app loads `config.toml` if
+(preferred) or given inline with `api_key`. A provider may list `models = [...]`
+for the model picker. Providers can also be added and edited **in the app**
+(Assistant → settings); a provider edited there overrides the config one field
+by field, and keys entered there are encrypted with the master key from
+`TEX2WORD_SECRET_KEY` (32 bytes, url-safe base64) or the key file at
+`[security] secret_key_path` (created with mode 0600 on first use — back it up,
+or stored keys can't be decrypted). The app loads `config.toml` if
 present and falls back to `config.sample.toml` otherwise. `GET /api/config`
 returns a **redacted** view — key values are never exposed, only `has_key` and
 the env-var name. With no key set, the assistant returns a clear `422`.
@@ -202,7 +217,19 @@ from `[auth]`.
 | `POST` | `/api/preview` | `{source, options?}` | `{html, outline, statistics, report, title}` |
 | `POST` | `/api/assistant` | `{action, source, instruction?, report?, provider?, context?}` | `{reply, provider, model, action, is_code}` |
 | `POST` | `/api/assistant/stream` | same as `/api/assistant` | `text/event-stream` (JSON deltas + a `done` event) |
-| `GET`  | `/api/skills` | — | `[{name, title, description, is_code, scope}]` (built-in + custom) |
+| `GET`/`POST` | `/api/skills` | — / `{name, title, prompt, description?, mode?}` | built-in + custom skills / create |
+| `PATCH`/`DELETE` | `/api/skills/{name}` | `{title?, prompt?, description?, mode?}` / — | edit / delete a custom skill |
+| `GET`/`POST` | `/api/prompts` | — / `{title, body, description?}` | saved prompts / create |
+| `PATCH`/`DELETE` | `/api/prompts/{pid}` | `{title?, body?, description?}` / — | edit / delete a prompt |
+| `GET`/`POST` | `/api/providers` | — / `{name, type, api_base, models, default_model, api_key?, api_key_env?, tools, enabled}` | providers (keys never returned) / create |
+| `PATCH`/`DELETE` | `/api/providers/{name}` | same fields / — | edit / delete (or reset a config provider) |
+| `POST` | `/api/providers/{name}/test` | `{model?}` | `{ok, reply or error, model, ms}` |
+| `GET`  | `/api/providers/{name}/remote-models` | — | `{models}` from the provider's `/models` |
+| `PUT`  | `/api/assistant/defaults` | `{provider, model?}` | default provider + model |
+| `GET`/`PUT` | `/api/assistant/settings` | — / `{instructions?, max_steps?, default_mode?}` | assistant behaviour |
+| `POST` | `/api/conversations/{cid}/agent` | `{content, mode?, skill?, provider?, model?, active_file?, selection?, files?}` | `text/event-stream` agent turn (steps, text, changes), persisted |
+| `POST` | `/api/conversations/{cid}/messages/{mid}/changes` | `{action: apply\|reject, paths?}` | `{changes, written}` |
+| `POST` | `/api/conversations/{cid}/truncate` | `{message_id}` | drops that message and everything after |
 | `POST`/`GET` | `/api/projects/{id}/conversations` | `{title?}` / — | chat session(s) |
 | `GET`/`PATCH`/`DELETE` | `/api/conversations/{cid}` | — / `{title}` / — | a conversation + messages |
 | `POST` | `/api/conversations/{cid}/message[/stream]` | `{content, source?, skill?, provider?, context?}` | reply (JSON or SSE), persisted |
@@ -295,8 +322,13 @@ app/
   store.py       durable artifact store for converted .docx (SQLite)
   jobs.py        async conversion jobs (JobStore + thread-pool JobQueue)
   config.py      config.toml loader (backend, CORS, LLM providers)
-  llm.py         LLM provider dispatch (Anthropic / OpenAI)
+  llm.py         LLM layer: streaming + tool calls (Anthropic / OpenAI-compatible)
   assistant.py   tex-copilot prompts (fix / polish / explain / ask)
+  assistant_api.py  assistant routes: providers, settings, skills, prompts, agent turns
+  agent.py       the agent loop + project tools over a staged workspace
+  providers.py   provider registry (config + in-app overrides, presets)
+  secretbox.py   AES-256-GCM encryption for stored API keys
+  prompts.py     saved prompts store
   ingest.py      Markdown → LaTeX (mistune) + arXiv fetch/unpack
   auth.py        scrypt passwords + RSA-signed (RS256) JWT sessions
   security.py    per-IP rate limiter (body-size cap + authz live in main.py)
@@ -311,7 +343,8 @@ app/
                  tikzedit.js + tikzedit-ui.js the TikZ editor dialog;
                  icons.js (file types) + outline.js (file outline) engines,
                  ux.js the editor gutter/status bar/outline/theme/shortcuts,
-                 theme.js the early theme switch
+                 theme.js the early theme switch,
+                 markdown.js (safe Markdown) + assistant-ui.js the assistant
   static/vendor/tikz-editor/  built TikZ editor bundle (not committed)
   tikzeditor.py  TikZ editor bundle detection + the CSP its pages get
 tests/           pytest suite (one file per area) + conftest

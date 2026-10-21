@@ -13,6 +13,9 @@ import pytest
 _fd, _path = tempfile.mkstemp(suffix=".db", prefix="tex2word-test-")
 os.close(_fd)
 os.environ.setdefault("TEX2WORD_DB", _path)
+# Stored secrets (provider API keys) are encrypted with this throwaway key, so
+# the suite never writes a key file into the repository.
+os.environ.setdefault("TEX2WORD_SECRET_KEY", "dGV4MndvcmQtdGVzdC1zdWl0ZS1zZWNyZXQta2V5ISE=")
 
 # Give the default provider (deepseek) a key so assistant success-paths can run;
 # the LLM call itself is monkeypatched in tests, so no network/real key is used.

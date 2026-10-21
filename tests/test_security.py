@@ -126,3 +126,24 @@ def test_creating_user_owns_the_project(client, authctx):
         assert client.get(f"/api/projects/{pid}", headers=hb).status_code == 403
     finally:
         client.delete(f"/api/projects/{pid}", headers=ha)
+
+
+def test_assistant_configuration_is_admin_only(client, authctx):
+    ha, hr = _h(authctx["alice"]), _h(authctx["root"])
+    body = {"name": "secured", "models": ["m"], "api_key": "sk-admin-only-123456"}
+    # a regular user can use the assistant's lists but not change them
+    assert client.get("/api/providers", headers=ha).json()["can_manage"] is False
+    assert client.post("/api/providers", json=body, headers=ha).status_code == 403
+    assert client.post("/api/skills", json={"name": "x-skill", "prompt": "p"}, headers=ha).status_code == 403
+    assert client.post("/api/prompts", json={"title": "t", "body": "b"}, headers=ha).status_code == 403
+    assert client.put("/api/assistant/settings", json={"max_steps": 3}, headers=ha).status_code == 403
+    assert client.put("/api/assistant/defaults", json={}, headers=ha).status_code == 403
+    try:
+        assert client.post("/api/providers", json=body, headers=hr).status_code == 201
+        listed = client.get("/api/providers", headers=ha).json()
+        mine = next(p for p in listed["providers"] if p["name"] == "secured")
+        assert mine["has_key"] and "key_hint" not in mine and listed["presets"] == []
+        assert client.post("/api/providers/secured/test", json={}, headers=ha).status_code == 403
+        assert client.patch("/api/providers/secured", json={"api_key": "x"}, headers=ha).status_code == 403
+    finally:
+        client.delete("/api/providers/secured", headers=hr)

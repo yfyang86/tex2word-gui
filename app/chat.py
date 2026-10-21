@@ -7,6 +7,7 @@ A ``Conversation`` belongs to a project and holds ordered ``Message`` rows
 
 from __future__ import annotations
 
+import json
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -33,12 +34,24 @@ class Message:
     content: str
     skill: str | None
     created_at: str
+    # assistant turns: {"steps", "changes", "usage", "provider", "model", "mode", "error", ...}
+    meta: dict[str, Any] = field(default_factory=dict)
 
     def public(self) -> dict[str, Any]:
         return {
             "id": self.id, "role": self.role, "content": self.content,
-            "skill": self.skill, "created_at": self.created_at,
+            "skill": self.skill, "created_at": self.created_at, "meta": self.meta,
         }
+
+
+def _meta(row: Any) -> dict[str, Any]:
+    if "meta" not in row.keys() or not row["meta"]:
+        return {}
+    try:
+        val = json.loads(row["meta"])
+    except ValueError:
+        return {}
+    return val if isinstance(val, dict) else {}
 
 
 @dataclass(slots=True)
@@ -110,11 +123,11 @@ class ConversationStore:
             ).fetchall()
         conv = self._conv(row)
         conv.messages = [Message(m["id"], m["role"], m["content"], m["skill"],
-                                 m["created_at"]) for m in msgs]
+                                 m["created_at"], _meta(m)) for m in msgs]
         return conv
 
     def add_message(self, cid: str, role: str, content: str,
-                    *, skill: str | None = None) -> Message:
+                    *, skill: str | None = None, meta: dict[str, Any] | None = None) -> Message:
         if role not in ("user", "assistant"):
             raise ChatError("role must be 'user' or 'assistant'")
         mid = uuid.uuid4().hex
@@ -126,15 +139,49 @@ class ConversationStore:
             if exists is None:
                 raise ChatError(f"unknown conversation: {cid!r}")
             self.db.conn.execute(
-                "INSERT INTO messages (id, conversation_id, role, content, skill, created_at)"
-                " VALUES (?, ?, ?, ?, ?, ?)",
-                (mid, cid, role, content, skill, ts),
+                "INSERT INTO messages (id, conversation_id, role, content, skill, created_at, meta)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (mid, cid, role, content, skill, ts, json.dumps(meta or {})),
             )
             self.db.conn.execute(
                 "UPDATE conversations SET updated_at = ? WHERE id = ?", (ts, cid)
             )
             self.db.conn.commit()
-        return Message(mid, role, content, skill, ts)
+        return Message(mid, role, content, skill, ts, dict(meta or {}))
+
+    def get_message(self, cid: str, mid: str) -> Message | None:
+        with self.db.lock:
+            m = self.db.conn.execute(
+                "SELECT * FROM messages WHERE id = ? AND conversation_id = ?", (mid, cid)
+            ).fetchone()
+        return Message(m["id"], m["role"], m["content"], m["skill"], m["created_at"], _meta(m)) if m else None
+
+    def set_meta(self, cid: str, mid: str, meta: dict[str, Any]) -> None:
+        with self.db.lock:
+            self.db.conn.execute(
+                "UPDATE messages SET meta = ? WHERE id = ? AND conversation_id = ?",
+                (json.dumps(meta), mid, cid),
+            )
+            self.db.conn.commit()
+
+    def truncate(self, cid: str, mid: str) -> int:
+        """Delete message ``mid`` and every later one (edit & resend, regenerate).
+        Returns how many were removed; 0 if ``mid`` is not in the conversation."""
+        conv = self.get(cid)
+        if conv is None:
+            raise ChatError(f"unknown conversation: {cid!r}")
+        ids = [m.id for m in conv.messages]
+        if mid not in ids:
+            return 0
+        doomed = ids[ids.index(mid):]
+        with self.db.lock:
+            self.db.conn.executemany("DELETE FROM messages WHERE id = ?", [(i,) for i in doomed])
+            # the rolling summary may cover removed turns; rebuild it lazily
+            self.db.conn.execute(
+                "UPDATE conversations SET summary = '', summary_upto = 0, updated_at = ? WHERE id = ?",
+                (_now(), cid))
+            self.db.conn.commit()
+        return len(doomed)
 
     def history(self, cid: str, *, turns: int = _HISTORY_TURNS) -> list[dict[str, str]]:
         """The recent messages as ``[{role, content}]`` for the model (oldest first)."""
