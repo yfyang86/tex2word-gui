@@ -1,5 +1,5 @@
 // Colour theme: "system" (follow the OS), "light" or "dark". Loaded in <head>
-// so the page never paints in the wrong theme; the top bar's button cycles it.
+// so the page never paints in the wrong theme; the top bar's menu (ux.js) sets it.
 "use strict";
 (function () {
   const KEY = "tw_theme";
@@ -9,9 +9,11 @@
   try { choice = localStorage.getItem(KEY) || "system"; } catch { /* private mode */ }
   if (!ORDER.includes(choice)) choice = "system";
 
+  // what the computer asks for, whatever is pinned
+  const system = () => (media && media.matches ? "dark" : "light");
+
   function effective() {
-    if (choice === "system") return media && media.matches ? "dark" : "light";
-    return choice;
+    return choice === "system" ? system() : choice;
   }
 
   function apply() {
@@ -28,8 +30,7 @@
     apply();
   }
 
-  const cycle = () => set(ORDER[(ORDER.indexOf(choice) + 1) % ORDER.length]);
-  if (media && media.addEventListener) media.addEventListener("change", () => { if (choice === "system") apply(); });
-  window.TwTheme = { get: () => choice, set, cycle, effective };
+  if (media && media.addEventListener) media.addEventListener("change", () => apply());
+  window.TwTheme = { get: () => choice, set, effective, system };
   apply();
 })();

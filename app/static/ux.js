@@ -319,15 +319,24 @@ document.addEventListener("DOMContentLoaded", () => {
   if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => uxRefresh(true));
 });
 
-// ── theme toggle ──
+// ── theme menu (System / Light / Dark) ──
 const THEME_NAMES = { system: "System", light: "Light", dark: "Dark" };
 function uxThemeButton() {
   const b = $("#btn-theme");
   if (!b || !window.TwTheme) return;
-  const c = TwTheme.get();
-  const next = { system: "light", light: "dark", dark: "system" }[c];
+  const c = TwTheme.get(), eff = TwTheme.effective();
   b.dataset.choice = c;
-  b.title = `Theme: ${THEME_NAMES[c]}${c === "system" ? ` (${TwTheme.effective()})` : ""} · click for ${THEME_NAMES[next]}`;
+  b.title = `Theme: ${THEME_NAMES[c]}${c === "system" ? ` (${eff} now)` : ""}`;
+  document.querySelectorAll("#theme-menu [data-theme-choice]").forEach((item) =>
+    item.setAttribute("aria-checked", String(item.dataset.themeChoice === c)));
+  $("#tm-sys").textContent = `(${TwTheme.system()})`;
+}
+
+function uxThemeMenu(open) {
+  const menu = $("#theme-menu"), b = $("#btn-theme");
+  menu.hidden = !open;
+  b.setAttribute("aria-expanded", String(open));
+  if (open) (menu.querySelector('[aria-checked="true"]') || menu.querySelector("button")).focus();
 }
 
 // ── keyboard shortcuts dialog ──
@@ -344,7 +353,24 @@ function uxTyping(el) {
 document.addEventListener("DOMContentLoaded", () => {
   uxThemeButton();
   document.addEventListener("tw:theme", uxThemeButton);
-  $("#btn-theme").addEventListener("click", () => { TwTheme.cycle(); });
+  $("#btn-theme").addEventListener("click", () => uxThemeMenu($("#theme-menu").hidden));
+  $("#theme-menu").addEventListener("click", (e) => {
+    const item = e.target.closest("[data-theme-choice]");
+    if (!item) return;
+    TwTheme.set(item.dataset.themeChoice);
+    uxThemeMenu(false);
+    $("#btn-theme").focus();
+  });
+  $("#theme-menu").addEventListener("keydown", (e) => {
+    const items = [...$("#theme-menu").querySelectorAll("button")];
+    const i = items.indexOf(document.activeElement);
+    if (e.key === "ArrowDown") { e.preventDefault(); items[(i + 1) % items.length].focus(); }
+    if (e.key === "ArrowUp") { e.preventDefault(); items[(i - 1 + items.length) % items.length].focus(); }
+    if (e.key === "Escape" || e.key === "Tab") { if (e.key === "Escape") e.preventDefault(); uxThemeMenu(false); if (e.key === "Escape") $("#btn-theme").focus(); }
+  });
+  document.addEventListener("mousedown", (e) => {
+    if (!$("#theme-menu").hidden && !e.target.closest(".theme-wrap")) uxThemeMenu(false);
+  });
   const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
   if (mac) document.querySelectorAll("kbd.mod").forEach((k) => { k.textContent = "⌘"; });
   $("#btn-shortcuts").addEventListener("click", () => uxShortcuts(true));

@@ -678,3 +678,16 @@ kbd { display: inline-block; min-width: 18px; padding: 1px 5px; margin-right: 3p
 
 /* auto-folded panels (narrow window) read slightly differently on the rail */
 .pane.auto-collapsed > .pane-rail { background: var(--bg-shell); }
+
+/* theme menu under the top-bar button */
+.theme-wrap { position: relative; display: inline-flex; }
+.theme-menu { position: absolute; top: calc(100% + 6px); right: -4px; z-index: 60; min-width: 190px; padding: 4px;
+  background: var(--bg-content); border: 1px solid var(--border); border-radius: 9px; box-shadow: var(--shadow-menu); display: flex; flex-direction: column; }
+.theme-menu button { display: flex; align-items: center; gap: 9px; width: 100%; padding: 7px 9px; border: none; border-radius: 6px;
+  background: none; color: var(--text-2); font-size: 12.5px; font-weight: 500; text-align: left; }
+.theme-menu button:hover, .theme-menu button:focus-visible { background: var(--hover-bg); color: var(--text-1); outline: none; }
+.theme-menu button > span { flex: 1; }
+.theme-menu small { font-size: 11px; font-weight: 400; color: var(--text-4); }
+.theme-menu .tm-check { visibility: hidden; color: var(--accent-content); }
+.theme-menu [aria-checked="true"] { color: var(--text-1); }
+.theme-menu [aria-checked="true"] .tm-check { visibility: visible; }

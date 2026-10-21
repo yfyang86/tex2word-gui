@@ -108,6 +108,21 @@ async def tikz_editor_csp(request: Request, call_next):
 
 
 @app.middleware("http")
+async def static_cache(request: Request, call_next):
+    """The page and its scripts/styles keep their URLs across releases, so make
+    browsers revalidate them (a cheap 304 via ETag) instead of reusing a stale
+    copy; the TikZ editor's content-hashed assets can be kept for good."""
+    response = await call_next(request)
+    path = request.url.path
+    if response.status_code < 400 and "cache-control" not in response.headers:
+        if path.startswith(tikzeditor.URL_PREFIX + "assets/"):
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        elif path == "/" or path == "/favicon.ico" or path.startswith("/static/"):
+            response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
+@app.middleware("http")
 async def body_limit(request: Request, call_next):
     """Reject over-large requests up front (by Content-Length) with a 413."""
     cl = request.headers.get("content-length")
@@ -906,6 +921,12 @@ def stream_chat_message(cid: str, req: ChatRequest) -> StreamingResponse:
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/favicon.ico", include_in_schema=False)
+def favicon() -> FileResponse:
+    """Browsers ask for /favicon.ico on their own; index.html also links the SVG."""
+    return FileResponse(STATIC_DIR / "favicon.ico", media_type="image/x-icon")
 
 
 # Static assets (css/js). Mounted last so it doesn't shadow the API routes.
