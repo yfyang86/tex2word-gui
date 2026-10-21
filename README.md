@@ -69,9 +69,18 @@ essential module; the web app is a thin adapter around its IR and outputs.
   `\tikzset` styles, colours and libraries loaded, and writes the picture back —
   adding any new libraries or definitions to the preamble. The editor bundle is
   built once with `scripts/build_tikz_editor.sh` (the Docker image does it).
+- **File outline** (left panel) — the open file's sections, figures, tables,
+  equations, theorems and `\input` files; click to jump (or open the file), and
+  the item you are in stays highlighted.
+- **Editor chrome** — line numbers that follow wrapped lines, a current-line
+  highlight, and a status bar (line/column, selection, lines, words, file role);
+  **Ctrl/Cmd+S** saves. File-type icons and a `MAIN` badge in the file tree.
+- **Dark theme** — follows the system, or pin Light/Dark from the top bar;
+  **?** lists the keyboard shortcuts.
 - **Collapsible, resizable side panels** — hide the files pane (**Ctrl/Cmd+B**)
   or the report/assistant pane (**Ctrl/Cmd+Alt+B**), drag their edges to resize;
-  the layout is remembered per browser.
+  the layout is remembered per browser, and narrow windows fold the panels
+  without changing it.
 - **tex-copilot assistant** — fix / polish / explain / ask over the current file
   and report, via a configurable LLM provider (Anthropic or any OpenAI-compatible).
   Replies **stream** in live, code suggestions apply through a **diff** (accept /
@@ -299,7 +308,10 @@ app/
                  complete.js are DOM-free engines shared with the node tests;
                  symbols.js + symbols.svg are the symbol list and its sprite;
                  tablegen.js (engine) + tablegen-ui.js the table generator;
-                 tikzedit.js + tikzedit-ui.js the TikZ editor dialog
+                 tikzedit.js + tikzedit-ui.js the TikZ editor dialog;
+                 icons.js (file types) + outline.js (file outline) engines,
+                 ux.js the editor gutter/status bar/outline/theme/shortcuts,
+                 theme.js the early theme switch
   static/vendor/tikz-editor/  built TikZ editor bundle (not committed)
   tikzeditor.py  TikZ editor bundle detection + the CSP its pages get
 tests/           pytest suite (one file per area) + conftest
