@@ -70,6 +70,8 @@ function updateHighlight() {
   if (!el) return;
   const text = $("#source").value;
   el.innerHTML = highlightCode(text, langFor(state.activeFile)) + "\n";
+  // ux.js (gutter, status bar, outline) follows the editor's text
+  document.dispatchEvent(new CustomEvent("tw:source"));
 }
 
 function syncHighlightScroll() {
@@ -789,6 +791,8 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#btn-import-tex").addEventListener("click", importMarkdownFile);
   $("#btn-save").addEventListener("click", () => saveActive(true));
   $("#btn-save-settings").addEventListener("click", saveSettings);
+  $("#conv-settings").addEventListener("change", updateSettingsSummary);
+  $("#conv-settings").addEventListener("input", updateSettingsSummary);
   $("#btn-convert").addEventListener("click", convertProject);
   $("#source").addEventListener("input", (e) => {
     if (!state.activeFile) return;
@@ -947,9 +951,12 @@ function renderProviderMeta() {
   if (!meta) return;
   if (state.provider) {
     const ok = state.provider.has_key;
-    meta.innerHTML = `<span class="dot ${ok ? "" : "off"}"></span>tex-copilot · ${esc(state.provider.name)} · ${esc(state.provider.model)}${ok ? "" : " · no key"}`;
+    meta.title = `tex-copilot · ${state.provider.name} · ${state.provider.model}` + (ok ? "" : ` · no API key (set ${state.provider.api_key_env || "an api_key"} in config.toml)`);
+    meta.innerHTML = `<span class="dot ${ok ? "" : "off"}"></span><span class="am-name">tex-copilot</span>` +
+      (ok ? "" : '<span class="am-warn">no key</span>');
   } else {
-    meta.innerHTML = `<span class="dot off"></span>tex-copilot · no provider configured`;
+    meta.title = "No assistant provider is configured (see [providers] in config.toml)";
+    meta.innerHTML = '<span class="dot off"></span><span class="am-name">tex-copilot</span><span class="am-warn">not configured</span>';
   }
 }
 
@@ -1058,17 +1065,36 @@ function renderGallery() {
   for (const p of items) grid.appendChild(projectCard(p));
 }
 
+// "just now", "5 min ago", "yesterday", "3 days ago", else the date.
+function relTime(iso, now) {
+  const t = Date.parse(iso || "");
+  if (!isFinite(t)) return "";
+  const s = Math.round(((now || Date.now()) - t) / 1000);
+  if (s < 45) return "just now";
+  const m = Math.round(s / 60);
+  if (m < 60) return `${m} min ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h} h ago`;
+  const d = Math.round(h / 24);
+  if (d === 1) return "yesterday";
+  if (d < 7) return `${d} days ago`;
+  return new Date(t).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
+}
+
+const PROJECT_KIND_ICON = {
+  arxiv: '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6M12 11v6M9 14l3 3 3-3"/></svg>',
+};
+
 function projectCard(p) {
   const el = document.createElement("div");
-  el.className = "project-card" + (p.archived ? " archived" : "");
-  const time = esc((p.updated_at || "").replace("T", " ").replace("+00:00", " UTC"));
+  el.className = `project-card kind-${String(p.kind || "tex").replace(/[^a-z]/g, "")}` + (p.archived ? " archived" : "");
+  const stamp = (p.updated_at || "").replace("T", " ").replace(/\.\d+/, "").replace("+00:00", " UTC");
+  const kindIcon = PROJECT_KIND_ICON[p.kind] || FileIcons.svg(p.kind === "markdown" ? "md" : "tex", 16);
   el.innerHTML = `
     <div class="rail"></div>
     <div class="body">
       <div class="row">
-        <div class="ic">
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none"><polyline points="16 18 22 12 16 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="8 6 2 12 8 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </div>
+        <div class="ic">${kindIcon}</div>
         <div style="flex:1;min-width:0">
           <div class="name">${esc(p.name)}</div>
           <div class="meta">${esc(p.main_path)}</div>
@@ -1077,7 +1103,7 @@ function projectCard(p) {
       <div class="tags">
         <span class="tag-chip">${esc(p.kind)}</span>
         <span class="tag-muted">${p.file_count} file${p.file_count === 1 ? "" : "s"}</span>
-        <span class="tag-time">updated ${time}</span>
+        <span class="tag-time" title="Updated ${esc(stamp)}">${esc(relTime(p.updated_at) ? "updated " + relTime(p.updated_at) : "")}</span>
       </div>
     </div>
     <div class="actions">
@@ -1197,9 +1223,6 @@ async function openProject(id) {
   openFile(p.files.some((f) => f.path === p.main_path) ? p.main_path : (p.files[0] && p.files[0].path));
 }
 
-const TEX_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="flex:none"><polyline points="16 18 22 12 16 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><polyline points="8 6 2 12 8 18" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
-const IMG_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="flex:none;color:var(--accent-service)"><rect x="3" y="3" width="18" height="18" rx="2" stroke="currentColor" stroke-width="2"/><circle cx="8.5" cy="8.5" r="1.5" stroke="currentColor" stroke-width="2"/><polyline points="21 15 16 10 5 21" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
-const FOLDER_ICON = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" style="flex:none;color:var(--text-3)"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>';
 const PLUS_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none"><line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
 const REN_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none"><path d="M12 20h9M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>';
 const DEL_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none"><line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>';
@@ -1236,6 +1259,7 @@ function renderFiles() {
   const list = $("#file-list");
   list.innerHTML = "";
   renderTree(list, buildFileTree(state.files || []), 0);
+  if (state.activeFile) $("#editor-main").hidden = state.activeFile !== renderMain();
   refreshOptionPickers();
 }
 
@@ -1248,7 +1272,7 @@ function renderTree(container, node, depth) {
     row.style.paddingLeft = pad + "px";
     row.innerHTML =
       `<svg class="chev${collapsed ? "" : " open"}" width="12" height="12" viewBox="0 0 24 24" fill="none"><polyline points="9 6 15 12 9 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>` +
-      FOLDER_ICON +
+      FileIcons.svg(collapsed ? "folder" : "folder-open") +
       `<span class="fname">${esc(d.name)}</span><span class="fcount">${countTreeFiles(d)}</span>` +
       `<button class="ficon fadd" title="New file in this folder">${PLUS_ICON}</button>`;
     row.addEventListener("click", () => toggleFolder(d.path));
@@ -1264,13 +1288,17 @@ function renderTree(container, node, depth) {
 function fileRow(f, depth) {
   const path = f.path;
   const row = document.createElement("div");
-  row.className = "file-row" + (path === state.activeFile ? " active" : "");
+  row.className = "file-row" + (path === state.activeFile ? " active" + (state.dirty ? " dirty" : "") : "");
   row.style.paddingLeft = (8 + depth * 14 + 18) + "px";  // align icon under folder icon
   const isMain = path === renderMain();
+  const kind = FileIcons.kindOf(path);
+  row.dataset.path = path;
+  row.title = `${path} · ${FileIcons.label(kind)}${isMain ? " · main file (the document root)" : ""}`;
   row.innerHTML =
-    (f.is_binary ? IMG_ICON : TEX_ICON) +
+    FileIcons.svg(kind) +
     `<span class="fname">${esc(path.split("/").pop())}</span>` +
-    (isMain ? '<span class="main-dot" title="rendered as the main file"></span>' : "") +
+    '<span class="unsaved-dot" title="unsaved changes"></span>' +
+    (isMain ? '<span class="main-badge" title="Main file: the document root that is previewed and converted">main</span>' : "") +
     `<button class="ficon fren" title="Rename">${REN_ICON}</button>` +
     `<button class="ficon fdel" title="Delete file">${DEL_ICON}</button>`;
   row.addEventListener("click", () => openFile(path));
@@ -1304,22 +1332,23 @@ async function renameFile(path) {
   if (state.rootFile === path) state.rootFile = np;
   markPreviewStale();
   renderFiles();
-  if (state.activeFile === np) { $("#editor-tab").textContent = np; }
+  if (state.activeFile === np) setEditorTab(np);
 }
 
 async function openFile(path, opts) {
   if (!path) {
-    state.activeFile = null; $("#editor-tab").textContent = "—";
+    state.activeFile = null; setEditorTab(null);
     $("#source").value = ""; updateHighlight(); return;
   }
   if (state.dirty && state.activeFile && state.activeFile !== path) await saveActive(false);
   edAcClose(); state.snippet = null;
   state.activeFile = path;
-  $("#editor-tab").textContent = path;
+  setEditorTab(path);
   $("#btn-import-tex").hidden = langFor(path) !== "md";  // Markdown → "Import to TeX"
   setDirty(false);
   if (isBinary(path)) {
     showAsset(path);
+    document.dispatchEvent(new CustomEvent("tw:source"));
   } else {
     $("#asset-view").hidden = true;
     $("#code-wrap").hidden = false;
@@ -1469,6 +1498,18 @@ function applySettings(s) {
   // .csl / reference_doc set after the pickers are populated
   state.pendingCsl = s.csl || "";
   state.pendingRefdoc = s.reference_doc || "";
+  updateSettingsSummary();
+}
+
+// One line under the folded "Conversion settings" card.
+function updateSettingsSummary() {
+  const cols = parseInt($("#opt-columns").value, 10) || 1;
+  const bits = [`${cols} column${cols === 1 ? "" : "s"}`, $("#opt-lang").value.trim() || "default language",
+    `${$("#opt-citation").value} citations`];
+  if ($("#opt-section").checked) bits.push("numbered by section");
+  if ($("#opt-mathimg").checked) bits.push("math images");
+  if ($("#opt-refdoc").value) bits.push("template " + $("#opt-refdoc").value.split("/").pop());
+  $("#settings-sum").textContent = bits.join(" · ");
 }
 
 // populate the .csl and template (.docx) pickers from the project's files
@@ -1596,12 +1637,28 @@ const LAYOUT_KEY = "tw_layout";
 function loadLayout() {
   let saved = null;
   try { saved = JSON.parse(localStorage.getItem(LAYOUT_KEY) || "null"); } catch { saved = null; }
-  const narrow = window.innerWidth < 1100;
   return {
     files: { width: PANEL_DEFAULT.files, collapsed: false, ...(saved && saved.files) },
-    report: { width: PANEL_DEFAULT.report, collapsed: !saved && narrow, ...(saved && saved.report) },
+    report: { width: PANEL_DEFAULT.report, collapsed: false, ...(saved && saved.report) },
   };
 }
+
+// Narrow windows fold the side panels away without touching the saved layout;
+// opening one by hand keeps it open until the window crosses the width again.
+const PANEL_NARROW = { files: 820, report: 1100 };
+const panelAuto = { files: false, report: false };   // folded because the window is narrow
+const panelNarrow = { files: null, report: null };   // last width class seen
+
+function updatePanelAuto() {
+  let changed = false;
+  for (const name of ["files", "report"]) {
+    const narrow = window.innerWidth < PANEL_NARROW[name];
+    if (narrow !== panelNarrow[name]) { panelNarrow[name] = narrow; panelAuto[name] = narrow; changed = true; }
+  }
+  return changed;
+}
+
+function panelCollapsed(name) { return !!(state.layout[name].collapsed || panelAuto[name]); }
 
 function saveLayout() {
   try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(state.layout)); } catch { /* private mode */ }
@@ -1616,24 +1673,29 @@ function applyLayout() {
   for (const name of ["files", "report"]) {
     const pane = $(`#pane-${name}`), cfg = state.layout[name];
     if (!pane) continue;
-    pane.classList.toggle("collapsed", !!cfg.collapsed);
-    pane.style.width = cfg.collapsed ? "" : clampPanel(name, cfg.width) + "px";
+    const collapsed = panelCollapsed(name);
+    pane.classList.toggle("collapsed", collapsed);
+    pane.classList.toggle("auto-collapsed", collapsed && !cfg.collapsed);
+    pane.style.width = collapsed ? "" : clampPanel(name, cfg.width) + "px";
     const rz = document.querySelector(`[data-resize="${name}"]`);
-    if (rz) rz.classList.toggle("hidden-edge", !!cfg.collapsed);
+    if (rz) rz.classList.toggle("hidden-edge", collapsed);
   }
 }
 
 function setPanelCollapsed(name, collapsed) {
+  if (!collapsed) panelAuto[name] = false;
   state.layout[name].collapsed = collapsed;
   applyLayout();
   saveLayout();
 }
 
-function togglePanel(name) { setPanelCollapsed(name, !state.layout[name].collapsed); }
+function togglePanel(name) { setPanelCollapsed(name, !panelCollapsed(name)); }
 
 function setupPanels() {
   state.layout = loadLayout();
+  updatePanelAuto();
   applyLayout();
+  window.addEventListener("resize", () => { if (updatePanelAuto()) applyLayout(); });
   document.querySelectorAll("[data-collapse]").forEach((b) =>
     b.addEventListener("click", () => setPanelCollapsed(b.dataset.collapse, true)));
   document.querySelectorAll("[data-expand]").forEach((b) =>
@@ -1645,7 +1707,7 @@ function setupPanels() {
     const name = handle.dataset.resize;
     handle.addEventListener("dblclick", () => togglePanel(name));
     handle.addEventListener("mousedown", (e) => {
-      if (state.layout[name].collapsed) return;
+      if (panelCollapsed(name)) return;
       e.preventDefault();
       const pane = $(`#pane-${name}`), ws = $("#view-workspace");
       const startX = e.clientX, startW = pane.getBoundingClientRect().width;
@@ -2272,7 +2334,7 @@ function renderReport(res) {
       <h3>Download</h3>
       <a href="${esc(withToken(res.download_url))}" download="${esc(res.filename)}">
         <button class="btn-accent" style="width:100%">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           ${esc(res.filename)}
         </button>
       </a>
@@ -2298,7 +2360,30 @@ function renderReport(res) {
 }
 
 // ── UI helpers ──────────────────────────────────────────
-function setDirty(v) { state.dirty = v; $("#dirty-dot").hidden = !v; }
+function setDirty(v) {
+  state.dirty = v;
+  $("#dirty-dot").hidden = !v;
+  const row = state.activeFile && document.querySelector(`.file-row[data-path="${CSS.escape(state.activeFile)}"]`);
+  document.querySelectorAll(".file-row.dirty").forEach((r) => { if (r !== row) r.classList.remove("dirty"); });
+  if (row) row.classList.toggle("dirty", !!v);
+}
+
+// Editor header: file icon, path (folder dimmed), "main" badge. #editor-tab's
+// text stays the plain path.
+function setEditorTab(path) {
+  const tab = $("#editor-tab"), icon = $("#editor-icon"), badge = $("#editor-main");
+  if (!path) {
+    tab.textContent = "—";
+    icon.innerHTML = ""; badge.hidden = true;
+    return;
+  }
+  const cut = path.lastIndexOf("/") + 1;
+  tab.innerHTML = (cut ? `<span class="tab-dir">${esc(path.slice(0, cut))}</span>` : "") +
+    `<span class="tab-base">${esc(path.slice(cut))}</span>`;
+  tab.title = path;
+  icon.innerHTML = FileIcons.forPath(path, 14);
+  badge.hidden = path !== renderMain();
+}
 function setCrumb(name) {
   const c = $("#crumb");
   c.innerHTML = `<span class="crumb-link" id="crumb-home">Documents</span>`;

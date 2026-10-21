@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Tex Word Studio</title>
+  <script src="/static/theme.js"></script>
   <link rel="stylesheet" href="/static/tokens.css">
   <link rel="stylesheet" href="/static/app.css">
 </head>
@@ -27,6 +28,14 @@
       </button>
     </span>
     <span class="version-chip" id="version-chip">tex2word …</span>
+    <button class="icon-btn" id="btn-shortcuts" title="Keyboard shortcuts (?)" aria-label="Keyboard shortcuts">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7 14h10"/></svg>
+    </button>
+    <button class="icon-btn" id="btn-theme" title="Theme" aria-label="Theme">
+      <svg class="th-ic th-system" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 1 0 18z" fill="currentColor"/></svg>
+      <svg class="th-ic th-light" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M4.93 19.07l1.41-1.41M17.66 6.34l1.41-1.41"/></svg>
+      <svg class="th-ic th-dark" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
     <button class="icon-btn" id="btn-about" title="About Tex Word Studio">
       <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2"/><path d="M12 11v5M12 8h.01" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
     </button>
@@ -63,7 +72,7 @@
           <button class="btn-secondary" id="btn-import-md">Import Markdown</button>
           <button class="btn-secondary" id="btn-import-arxiv">Import arXiv</button>
           <button class="btn-primary" id="btn-new">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><line x1="12" y1="5" x2="12" y2="19" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="#fff" stroke-width="2.2" stroke-linecap="round"/></svg>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>
             New project
           </button>
         </div>
@@ -128,6 +137,15 @@
         <button class="icon-btn" data-collapse="files" title="Hide files (Ctrl+B)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><polyline points="15 18 9 12 15 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
       </div>
       <div id="file-list" class="file-list"></div>
+      <section class="pane-outline" id="pane-outline">
+        <button class="outline-head" id="outline-toggle" aria-expanded="true" aria-controls="outline-tree" title="Outline of the open file (sections, floats, equations, \input files)">
+          <svg class="chev open" width="12" height="12" viewBox="0 0 24 24" fill="none"><polyline points="9 6 15 12 9 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span class="eyebrow">Outline</span>
+          <span class="outline-file" id="outline-file"></span>
+          <span class="fcount" id="outline-count"></span>
+        </button>
+        <div class="outline-tree" id="outline-tree" role="tree" aria-label="File outline"></div>
+      </section>
       <div class="pane-tools">
         <div class="eyebrow">Tools</div>
         <button class="tool-row" data-tool="tablegen" title="Build a LaTeX table visually, or edit the table at the cursor">
@@ -143,7 +161,9 @@
     <!-- editor -->
     <section class="pane editor">
       <div class="pane-head">
+        <span class="editor-icon" id="editor-icon"></span>
         <span class="pane-title sub" id="editor-tab">—</span>
+        <span class="main-badge" id="editor-main" hidden title="Main file: the document root that is previewed and converted">main</span>
         <span class="dirty-dot" id="dirty-dot" hidden title="unsaved changes"></span>
         <div class="spacer"></div>
         <button class="icon-btn" id="btn-symbols" title="Symbols" aria-label="Symbol palette">
@@ -156,9 +176,21 @@
       <div class="split" id="split">
         <div class="split-pane" id="source-pane">
           <div class="code-wrap" id="code-wrap">
+            <div class="ed-curline" id="ed-curline" aria-hidden="true"></div>
             <pre class="code-hl" id="highlight" aria-hidden="true"></pre>
             <textarea id="source" spellcheck="false" autocapitalize="off" autocomplete="off" autocorrect="off" aria-label="file source"></textarea>
             <div id="ed-ac" class="ed-ac" role="listbox" hidden></div>
+            <div class="ed-gutter" id="ed-gutter" title="Click a number to select the line"><div class="ed-gutter-in" id="ed-gutter-in"></div></div>
+          </div>
+          <div class="ed-status" id="ed-status" aria-live="off">
+            <span id="st-pos">Ln 1, Col 1</span>
+            <span id="st-sel" hidden></span>
+            <span class="st-sep"></span>
+            <span id="st-lines"></span>
+            <span id="st-words"></span>
+            <span class="spacer"></span>
+            <span id="st-root"></span>
+            <span id="st-kind"></span>
           </div>
           <div class="asset-view" id="asset-view" hidden></div>
           <div class="sym-panel" id="sym-panel" role="dialog" aria-label="Symbols" hidden>
@@ -219,27 +251,36 @@
       <div class="report-body">
         <!-- Report tab -->
         <div id="tab-report">
-          <div class="options">
-            <label><input type="checkbox" id="opt-section"> number by section</label>
-            <label>columns <input type="number" id="opt-columns" min="1" max="4" value="1"></label>
-            <label>lang <input type="text" id="opt-lang" placeholder="en-US"></label>
-            <label>citations
-              <select id="opt-citation">
-                <option value="static">static</option>
-                <option value="zotero">zotero</option>
-              </select>
-            </label>
-            <label id="opt-csl-wrap" hidden>CSL
-              <select id="opt-csl"><option value="">none</option></select>
-            </label>
-            <label><input type="checkbox" id="opt-mathimg"> math→image fallback</label>
-            <label id="opt-refdoc-wrap" hidden>template
-              <select id="opt-refdoc"><option value="">none</option></select>
-            </label>
-            <button class="btn-secondary" id="btn-save-settings" title="Save these as the project's default settings" style="padding:4px 9px;font-size:11.5px">Save settings</button>
-          </div>
+          <details class="settings-card" id="conv-settings">
+            <summary>
+              <svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none"><polyline points="9 6 15 12 9 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              <span class="settings-title">Conversion settings</span>
+              <span class="settings-sum" id="settings-sum"></span>
+            </summary>
+            <div class="options">
+              <label class="opt"><span>Columns</span><input type="number" id="opt-columns" min="1" max="4" value="1"></label>
+              <label class="opt"><span>Language</span><input type="text" id="opt-lang" placeholder="en-US"></label>
+              <label class="opt"><span>Citations</span>
+                <select id="opt-citation">
+                  <option value="static">static</option>
+                  <option value="zotero">zotero</option>
+                </select>
+              </label>
+              <label class="opt" id="opt-csl-wrap" hidden><span>CSL style</span>
+                <select id="opt-csl"><option value="">none</option></select>
+              </label>
+              <label class="opt" id="opt-refdoc-wrap" hidden><span>Word template</span>
+                <select id="opt-refdoc"><option value="">none</option></select>
+              </label>
+              <label class="opt check"><input type="checkbox" id="opt-section"> Number by section <span class="muted">(1.1, 1.2, …)</span></label>
+              <label class="opt check"><input type="checkbox" id="opt-mathimg"> Math → image fallback <span class="muted">for formulas Word can't edit</span></label>
+            </div>
+            <div class="settings-foot">
+              <button class="btn-secondary btn-small" id="btn-save-settings" title="Save these as the project's default settings">Save as project defaults</button>
+            </div>
+          </details>
           <button class="btn-primary" id="btn-convert" style="width:100%">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 12h12M11 6l6 6-6 6" stroke="#fff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M4 12h12M11 6l6 6-6 6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
             Convert project
           </button>
           <div id="error-slot"></div>
@@ -286,6 +327,40 @@
       </div>
     </aside>
   </main>
+
+  <!-- ── keyboard shortcuts (app/static/ux.js) ── -->
+  <div id="shortcuts-modal" class="modal" hidden>
+    <div class="modal-card shortcuts-card" role="dialog" aria-labelledby="shortcuts-title">
+      <h3 id="shortcuts-title">Keyboard shortcuts</h3>
+      <div class="sc-grid">
+        <section>
+          <h4>Editor</h4>
+          <dl>
+            <div><dt><kbd class="mod">Ctrl</kbd><kbd>S</kbd></dt><dd>Save the file</dd></div>
+            <div><dt><kbd>Tab</kbd></dt><dd>Complete, expand an environment, next placeholder, or indent</dd></div>
+            <div><dt><kbd>Shift</kbd><kbd>Tab</kbd></dt><dd>Previous placeholder, or outdent</dd></div>
+            <div><dt><kbd class="mod">Ctrl</kbd><kbd>Space</kbd></dt><dd>Show completions</dd></div>
+            <div><dt><kbd>Enter</kbd></dt><dd>After <code>\begin{…}</code>: add the matching <code>\end</code></dd></div>
+            <div><dt><kbd>Esc</kbd> then <kbd>Tab</kbd></dt><dd>Move focus out of the editor</dd></div>
+            <div><dt>Click a line number</dt><dd>Select that line</dd></div>
+          </dl>
+        </section>
+        <section>
+          <h4>Workspace</h4>
+          <dl>
+            <div><dt><kbd class="mod">Ctrl</kbd><kbd>B</kbd></dt><dd>Show / hide the files panel</dd></div>
+            <div><dt><kbd class="mod">Ctrl</kbd><kbd>Alt</kbd><kbd>B</kbd></dt><dd>Show / hide the right panel</dd></div>
+            <div><dt>Click in the preview</dt><dd>Jump to that line of the source</dd></div>
+            <div><dt>Outline item</dt><dd>Jump to it; an <code>\input</code> opens its file</dd></div>
+            <div><dt><kbd>Shift</kbd><kbd>Enter</kbd></dt><dd>Send a message to the assistant</dd></div>
+            <div><dt><kbd>?</kbd></dt><dd>This list</dd></div>
+            <div><dt><kbd>Esc</kbd></dt><dd>Close a dialog</dd></div>
+          </dl>
+        </section>
+      </div>
+      <div class="modal-actions"><button class="btn-secondary" id="shortcuts-close">Close</button></div>
+    </div>
+  </div>
 
   <!-- ── TikZ editor (app/static/tikzedit-ui.js; embeds github.com/DominikPeters/tikz-editor) ── -->
   <div id="tz-modal" class="modal tz-modal" hidden>
@@ -423,6 +498,8 @@
     </div>
   </div>
 
+  <script src="/static/icons.js"></script>
+  <script src="/static/outline.js"></script>
   <script src="/static/sync.js"></script>
   <script src="/static/symbols.js"></script>
   <script src="/static/complete.js"></script>
@@ -431,5 +508,6 @@
   <script src="/static/app.js"></script>
   <script src="/static/tablegen-ui.js"></script>
   <script src="/static/tikzedit-ui.js"></script>
+  <script src="/static/ux.js"></script>
 </body>
 </html>

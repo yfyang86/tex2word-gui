@@ -125,7 +125,7 @@ async function tzOpen() {
     await tzEnsureFrame(info.url);
     TZ.frame.hidden = false;
     $("#tz-loading").hidden = true;
-    await tzRequest("load", { source, title: TZ.target ? TZ.target.file.split("/").pop() : "New figure", colorScheme: "light" });
+    await tzRequest("load", { source, title: TZ.target ? TZ.target.file.split("/").pop() : "New figure", colorScheme: window.TwTheme ? TwTheme.effective() : "light" });
     insert.disabled = !canWrite;
     TZ.frame.focus();
   } catch (e) {

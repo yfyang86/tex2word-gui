@@ -90,7 +90,7 @@ module.exports = {
     const heads = await page.$$eval("#preview-doc h1:not(.doc-title)", (els) => els.map((e) => e.textContent));
     assert(heads.some((h) => h.includes("Introduction")) && heads.some((h) => h.includes("Method")),
            "preview still shows the whole document: " + heads);
-    assert(await page.$eval(".file-row.active", (e) => !e.querySelector(".main-dot")), "fragment is not marked main");
+    assert(await page.$eval(".file-row.active", (e) => !e.querySelector(".main-badge")), "fragment is not marked main");
   },
 
   async editor_click_scrolls_preview_in_a_subfile({ page, base }) {
