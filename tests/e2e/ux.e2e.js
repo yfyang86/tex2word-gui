@@ -123,23 +123,45 @@ module.exports = {
     assert(shift === `translateY(${-top}px)`, shift + " vs " + top);
   },
 
-  async theme_toggle_cycles_and_persists({ page, base }) {
+  async theme_menu_switches_in_one_click_and_persists({ page, base }) {
     await page.emulateMedia({ colorScheme: "light" });
     await page.goto(base + "/");
     const bg = () => page.evaluate(() => getComputedStyle(document.body).backgroundColor);
     const light = await bg();
+    const pick = async (choice) => {
+      await page.click("#btn-theme");
+      await page.waitForSelector("#theme-menu:not([hidden])");
+      await page.click(`#theme-menu [data-theme-choice="${choice}"]`);
+      assert(await page.$eval("#theme-menu", (m) => m.hidden), "menu closes after a pick");
+    };
     assert((await page.getAttribute("#btn-theme", "data-choice")) === "system", "starts on system");
-    await page.click("#btn-theme");                                  // → light
-    assert((await page.getAttribute("html", "data-theme")) === "light", "light pinned");
-    await page.click("#btn-theme");                                  // → dark
+    // one pick turns the page dark, even when the system is light (the old
+    // cycle went System → Light first, which looked like nothing happened)
+    await pick("dark");
     assert((await page.getAttribute("html", "data-theme")) === "dark", "dark pinned");
     assert((await bg()) !== light, "dark background");
+    await page.click("#btn-theme");
+    assert((await page.getAttribute('#theme-menu [data-theme-choice="dark"]', "aria-checked")) === "true", "current choice ticked");
+    await page.keyboard.press("Escape");
+    assert(await page.$eval("#theme-menu", (m) => m.hidden), "Esc closes the menu");
     await page.reload();
-    assert((await page.getAttribute("html", "data-theme")) === "dark", "persists");
-    await page.click("#btn-theme");                                  // → system (light here)
-    assert((await page.getAttribute("html", "data-theme")) === null && (await bg()) === light, "back to system");
+    assert((await page.getAttribute("html", "data-theme")) === "dark" && (await bg()) !== light, "persists across reloads");
+    // keyboard: open, arrow to Light, Enter
+    await page.focus("#btn-theme");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.activeElement.dataset.themeChoice === "dark");
+    await page.keyboard.press("ArrowUp");
+    await page.keyboard.press("Enter");
+    assert((await page.getAttribute("html", "data-theme")) === "light" && (await bg()) === light, "light by keyboard");
+    // System follows the computer
+    await pick("system");
+    assert((await page.getAttribute("html", "data-theme")) === null && (await bg()) === light, "system (light)");
     await page.emulateMedia({ colorScheme: "dark" });
     await page.waitForFunction((l) => getComputedStyle(document.body).backgroundColor !== l, light);
+    // a click elsewhere closes the menu
+    await page.click("#btn-theme");
+    await page.mouse.click(400, 500);
+    assert(await page.$eval("#theme-menu", (m) => m.hidden), "outside click closes");
   },
 
   async shortcuts_dialog_opens_with_question_mark({ page, base }) {

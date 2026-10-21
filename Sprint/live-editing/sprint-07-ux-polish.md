@@ -47,9 +47,11 @@ screen at desktop and narrow widths) found:
 - **Ctrl/Cmd+S** saves the file.
 
 **Theme** (`theme.js`, `tokens.css`)
-- Dark palette for every token, following the system by default. The top-bar
-  button cycles System → Light → Dark, remembered per browser and applied
-  before first paint.
+- Dark palette for every token, following the system by default. A top-bar
+  menu offers Light / Dark / System (ticked, with the system's current value),
+  remembered per browser and applied before first paint. (The first version
+  cycled System → Light → Dark, so on a light computer the first click changed
+  nothing visible.)
 - Hard-coded colours became tokens (`--on-primary`, `--overlay`, `--sel-bg`,
   …). The TikZ editor opens in the matching scheme.
 
@@ -67,6 +69,12 @@ screen at desktop and narrow widths) found:
   and an icon and colour per kind (TeX / arXiv / Markdown).
 - **Shortcuts:** a keyboard-shortcuts dialog (top-bar button, or `?` when not
   typing).
+- **Favicon:** the brand mark as `favicon.svg` plus a 16/32/48 px
+  `favicon.ico` (drawn by `scripts/build_favicon.py`), also served at
+  `/favicon.ico`, so browsers stop logging a 404.
+- **Caching:** the page and `/static/*` are sent with `Cache-Control: no-cache`,
+  so a new release's CSS and JS are picked up (a cheap 304 when unchanged).
+  The TikZ editor's hashed assets are cached for good.
 
 ## Tests
 
@@ -85,7 +93,10 @@ screen at desktop and narrow widths) found:
     folding remembered;
   - gutter numbers with a wrapped line, click-to-select, status bar, scroll
     alignment;
-  - theme cycle, persistence and system following;
+  - the theme menu: one click to dark, the ticked choice, keyboard use,
+    persistence, following the system;
   - the `?` dialog, but not while typing;
   - narrow-window folding;
   - settings summary, missing-image placeholder, relative times.
+- `tests/test_static.py`: favicon (ICO with several sizes, SVG link) and
+  cache headers.
