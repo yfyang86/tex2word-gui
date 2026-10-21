@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from . import agent, llm, service, skills
+from . import agent, chat, llm, service, skills
 from .prompts import PromptError, PromptStore
 from .providers import PRESETS, ProviderError, ProviderRegistry, Settings
 
@@ -306,6 +306,12 @@ class AgentTurn(BaseModel):
     selection_lines: list[int] | None = None   # [first, last], 1-based
     cursor_line: int | None = None
     files: list[str] = Field(default_factory=list)   # @-mentioned paths
+    # Branching: where the new user message goes. None = the end of the branch
+    # on screen; "root" = a new first message; else the id of the message to
+    # answer under (edit & resend passes the edited message's parent).
+    parent_id: str | None = None
+    # Regenerate: reply again to this existing user message (no new message).
+    regenerate: str | None = None
 
 
 CHAT_FILE_CHARS = 60_000
@@ -361,7 +367,8 @@ def _check_project(project, projects):
     return check
 
 
-def _history(cid: str, project_id: str | None, provider, model: str) -> tuple[list, str, str]:
+def _history(cid: str, project_id: str | None, provider, model: str,
+             upto: str | None = chat.HEAD) -> tuple[list, str, str]:
     cfg = deps.config.assistant
     memory = deps.projects.get_memory(project_id) if (cfg.project_memory and project_id) else ""
     summarize = None
@@ -379,9 +386,11 @@ def _history(cid: str, project_id: str | None, provider, model: str) -> tuple[li
             user = (f"Summary so far:\n{prior}\n\n" if prior else "") + f"New messages to fold in:\n{convo}"
             return llm.complete(sp, SUMMARY_SYSTEM, user, max_tokens=512, model=sm)
     try:
-        summary, history = deps.chats.history_for_model(cid, budget=cfg.history_budget_turns, summarize=summarize)
+        summary, history = deps.chats.history_for_model(cid, budget=cfg.history_budget_turns,
+                                                        summarize=summarize, upto=upto)
     except llm.LLMError:
-        summary, history = deps.chats.history_for_model(cid, budget=cfg.history_budget_turns, summarize=None)
+        summary, history = deps.chats.history_for_model(cid, budget=cfg.history_budget_turns,
+                                                        summarize=None, upto=upto)
     return history, memory, summary
 
 
@@ -405,27 +414,63 @@ def agent_turn(cid: str, turn: AgentTurn) -> StreamingResponse:
         raise HTTPException(status_code=422, detail=(
             f"provider {provider.name!r} has no API key — add one in Assistant settings"
             + (f" or set {provider.api_key_env}" if provider.api_key_env else "")))
+    regen = None
+    if turn.regenerate:
+        regen = deps.chats.get_message(cid, turn.regenerate)
+        if regen is None or regen.role != "user":
+            raise HTTPException(status_code=404, detail="no such user message to regenerate")
+    skill_name = regen.skill if regen else turn.skill
     skill = None
-    if turn.skill:
-        skill = skills.resolve(deps.skills, turn.skill)
+    if skill_name:
+        skill = skills.resolve(deps.skills, skill_name)
         if skill is None:
-            raise HTTPException(status_code=422, detail=f"unknown skill: /{turn.skill}")
+            raise HTTPException(status_code=422, detail=f"unknown skill: /{skill_name}")
     mode = turn.mode or (skill.mode if skill else None) or prefs()["default_mode"]
     if mode not in ("agent", "chat"):
         raise HTTPException(status_code=422, detail="mode must be 'agent' or 'chat'")
-    text = turn.content.strip()
+    if regen:
+        text = regen.content
+        if regen.skill and text.startswith("/" + regen.skill):
+            text = text[len(regen.skill) + 1:]
+        text = text.strip()
+    else:
+        text = turn.content.strip()
     if not text and skill is None:
         raise HTTPException(status_code=422, detail="the message is empty")
+
+    # where this turn sits in the conversation tree
+    if regen:
+        parent: str | None = regen.parent_id
+    elif turn.parent_id == "root":
+        parent = None
+    elif turn.parent_id:
+        if deps.chats.get_message(cid, turn.parent_id) is None:
+            raise HTTPException(status_code=404, detail="message to branch from not found")
+        parent = turn.parent_id
+    else:
+        parent = conv.head_id
 
     request_text = skills.render_skill(skill, file=turn.active_file, selection=turn.selection,
                                        user_input=text) if skill else text
     model_message = _context_block(turn, project, mode) + request_text
-    history, memory, summary = _history(cid, conv.project_id, provider, model)
-    shown = (f"/{skill.name} {text}".strip() if skill else text)
-    user_msg = deps.chats.add_message(cid, "user", shown, skill=skill.name if skill else None,
-                                      meta={"active_file": turn.active_file, "selection_lines": turn.selection_lines})
-    if conv.title in ("Chat", "New chat") and len(conv.messages) == 0:
-        deps.chats.rename(cid, (shown.splitlines() or ["Chat"])[0][:60])
+    history, memory, summary = _history(cid, conv.project_id, provider, model, upto=parent)
+    if regen:
+        user_msg = regen
+    else:
+        shown = (f"/{skill.name} {text}".strip() if skill else text)
+        user_msg = deps.chats.add_message(
+            cid, "user", shown, skill=skill.name if skill else None, parent_id=parent,
+            meta={"active_file": turn.active_file, "selection_lines": turn.selection_lines})
+        if conv.title in ("Chat", "New chat") and conv.message_count == 0:
+            deps.chats.rename(cid, (shown.splitlines() or ["Chat"])[0][:60])
+
+    # the session remembers its model (and mode, when chosen explicitly)
+    prev_p, prev_m = (conv.settings or {}).get("provider"), (conv.settings or {}).get("model")
+    switched = bool(prev_m) and (prev_p, prev_m) != (provider.name, model)
+    remembered = {"provider": provider.name, "model": model}
+    if turn.mode:
+        remembered["mode"] = turn.mode
+    deps.chats.update(cid, settings=remembered, touch=False)
 
     workspace = agent.Workspace(files=project.file_map(), main=project.main_path,
                                 binary={f.path for f in project.files if f.is_binary})
@@ -438,11 +483,14 @@ def agent_turn(cid: str, turn: AgentTurn) -> StreamingResponse:
         out: list[str] = []
         meta: dict[str, Any] = {"provider": provider.name, "model": model, "mode": mode,
                                 "skill": skill.name if skill else None, "steps": [], "reasoning": ""}
+        if switched:
+            meta["switched_from"] = {"provider": prev_p, "model": prev_m}
         state: dict[str, Any] = {"error": None, "msg": None}
         t0 = time.monotonic()
         try:
             yield _sse({"type": "start", "user_message": user_msg.public(), "provider": provider.name,
-                        "model": model, "mode": mode})
+                        "model": model, "mode": mode,
+                        "switched_from": meta.get("switched_from")})
             for ev in agent.run(provider, model, system, messages, tools, max_steps=max_steps,
                                 max_tokens=deps.config.llm.max_tokens):
                 t = ev["type"]
@@ -478,7 +526,8 @@ def agent_turn(cid: str, turn: AgentTurn) -> StreamingResponse:
             if meta.get("changes"):
                 content += ("\n\n" if content else "") + "_(Proposed edits to: " + \
                     ", ".join(c["path"] for c in meta["changes"]) + ")_"
-            state["msg"] = deps.chats.add_message(cid, "assistant", content, meta=meta)
+            state["msg"] = deps.chats.add_message(cid, "assistant", content, meta=meta,
+                                                  parent_id=user_msg.id)
         if state["error"]:
             yield _sse({"type": "error", "error": state["error"], "message": state["msg"].public()})
         else:
@@ -528,16 +577,3 @@ def act_on_changes(cid: str, mid: str, req: ChangeAction) -> dict:
     meta["changes"] = changes
     deps.chats.set_meta(cid, mid, meta)
     return {"changes": changes, "written": written}
-
-
-class Truncate(BaseModel):
-    message_id: str
-
-
-@router.post("/api/conversations/{cid}/truncate")
-def truncate_conversation(cid: str, req: Truncate) -> dict:
-    try:
-        removed = deps.chats.truncate(cid, req.message_id)
-    except Exception as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return {"removed": removed}

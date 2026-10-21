@@ -147,9 +147,15 @@ _MIGRATIONS = {
     "conversations": [
         ("summary", "ALTER TABLE conversations ADD COLUMN summary TEXT NOT NULL DEFAULT ''"),
         ("summary_upto", "ALTER TABLE conversations ADD COLUMN summary_upto INTEGER NOT NULL DEFAULT 0"),
+        ("summary_anchor", "ALTER TABLE conversations ADD COLUMN summary_anchor TEXT"),
+        ("head_id", "ALTER TABLE conversations ADD COLUMN head_id TEXT"),
+        ("settings", "ALTER TABLE conversations ADD COLUMN settings TEXT NOT NULL DEFAULT '{}'"),
+        ("pinned", "ALTER TABLE conversations ADD COLUMN pinned INTEGER NOT NULL DEFAULT 0"),
+        ("forked_from", "ALTER TABLE conversations ADD COLUMN forked_from TEXT NOT NULL DEFAULT '{}'"),
     ],
     "messages": [
         ("meta", "ALTER TABLE messages ADD COLUMN meta TEXT NOT NULL DEFAULT '{}'"),
+        ("parent_id", "ALTER TABLE messages ADD COLUMN parent_id TEXT"),
     ],
     "skills": [
         ("mode", "ALTER TABLE skills ADD COLUMN mode TEXT NOT NULL DEFAULT 'agent'"),
@@ -176,6 +182,7 @@ class Database:
         self._conn.commit()
 
     def _migrate(self) -> None:
+        added: set[tuple[str, str]] = set()
         for table, cols in _MIGRATIONS.items():
             existing = {
                 row["name"]
@@ -184,6 +191,24 @@ class Database:
             for name, ddl in cols:
                 if name not in existing:
                     self._conn.execute(ddl)
+                    added.add((table, name))
+        if ("messages", "parent_id") in added:
+            self._chain_messages()
+        self._conn.execute(
+            "CREATE INDEX IF NOT EXISTS messages_by_parent ON messages (conversation_id, parent_id)")
+
+    def _chain_messages(self) -> None:
+        """Chats from before branching were flat lists: link each message to the
+        one before it and put the head at the last one."""
+        convs = [r["id"] for r in self._conn.execute("SELECT id FROM conversations")]
+        for cid in convs:
+            ids = [r["id"] for r in self._conn.execute(
+                "SELECT id FROM messages WHERE conversation_id = ? ORDER BY created_at, rowid", (cid,))]
+            self._conn.executemany(
+                "UPDATE messages SET parent_id = ? WHERE id = ?",
+                [(ids[i - 1], ids[i]) for i in range(1, len(ids))])
+            if ids:
+                self._conn.execute("UPDATE conversations SET head_id = ? WHERE id = ?", (ids[-1], cid))
 
     @property
     def lock(self) -> threading.Lock:

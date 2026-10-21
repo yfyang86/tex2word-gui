@@ -14,6 +14,7 @@ while typing.
 | [06](sprint-06-tikz-editor.md) | Embedded TikZ editor (left panel tool), edit pictures in place | done |
 | [07](sprint-07-ux-polish.md) | File-type icons, file outline, line numbers + status bar, dark theme, narrow layout, shortcuts | done |
 | [08](sprint-08-assistant.md) | Assistant: in-app providers/models with encrypted keys, tool-using agent with reviewed edits, skills + prompts CRUD | done |
+| [09](sprint-09-sessions.md) | Assistant sessions: CRUD + search/pin/export, message versions and branches, split, remembered model/mode with switch warnings | done |
 
 ## How it is tested
 
