@@ -6,12 +6,14 @@
 //   "fix the typo"  → read_file main.tex → edit_file wrold→world → summary text
 //   "slow"          → streams a long answer slowly (for Stop)
 //   "OK" probe      → "OK" (the settings "Test connection")
+//   "echo: X"       → "Echo #n (model): X" — numbered, to tell versions apart
 //   anything else   → a Markdown answer with a LaTeX code block
 "use strict";
 const http = require("node:http");
 
 function start() {
   const log = [];
+  let echoes = 0;
   const server = http.createServer((req, res) => {
     let body = "";
     req.on("data", (c) => { body += c; });
@@ -45,6 +47,12 @@ function start() {
         send({}, "tool_calls");
         end();
       };
+      const echo = /^echo: ?(.*)$/m.exec(text.replace(/^<context>[\s\S]*?<\/context>\s*/, ""));
+      if (echo) {
+        send({ role: "assistant", content: `Echo #${++echoes} (${j.model}): ${echo[1]}` });
+        send({}, "stop");
+        return end();
+      }
       if (/single word OK/.test(text)) { send({ role: "assistant", content: "OK" }); send({}, "stop"); return end(); }
       if (/fix the typo/.test(text) && j.tools) {
         const tools = msgs.filter((m) => m.role === "tool");

@@ -89,6 +89,12 @@ essential module; the web app is a thin adapter around its IR and outputs.
   blocks), and can be regenerated or edited & resent. Context chips carry the
   open file, the selection and `@file` mentions; `/`-skills run templates.
   Chats persist per project, with a rolling summary and per-project memory.
+- **Sessions** — each chat/agent session keeps its own model and mode. Find,
+  pin, rename, duplicate, export (Markdown) and delete sessions. Edits and
+  regenerations keep earlier **versions** (`‹ 2/3 ›`); pick any **branch**, or
+  **split** a point of the conversation into a new session. Changing a
+  session's model first warns about what it costs (prompt / KV cache re-read,
+  summarised early turns, context size, tool support).
 - **Providers & models in the app** — add or edit OpenAI-compatible and
   Anthropic providers (presets for OpenAI, Anthropic, DeepSeek, OpenRouter, Kimi,
   Ollama, vLLM), their **model lists** (e.g. `deepseek-flash`, `deepseek-pro`;
@@ -227,11 +233,15 @@ from `[auth]`.
 | `GET`  | `/api/providers/{name}/remote-models` | — | `{models}` from the provider's `/models` |
 | `PUT`  | `/api/assistant/defaults` | `{provider, model?}` | default provider + model |
 | `GET`/`PUT` | `/api/assistant/settings` | — / `{instructions?, max_steps?, default_mode?}` | assistant behaviour |
-| `POST` | `/api/conversations/{cid}/agent` | `{content, mode?, skill?, provider?, model?, active_file?, selection?, files?}` | `text/event-stream` agent turn (steps, text, changes), persisted |
+| `POST` | `/api/conversations/{cid}/agent` | `{content, mode?, skill?, provider?, model?, active_file?, selection?, files?, parent_id?, regenerate?}` | `text/event-stream` agent turn (steps, text, changes), persisted; `parent_id` branches, `regenerate` adds a reply version |
 | `POST` | `/api/conversations/{cid}/messages/{mid}/changes` | `{action: apply\|reject, paths?}` | `{changes, written}` |
-| `POST` | `/api/conversations/{cid}/truncate` | `{message_id}` | drops that message and everything after |
-| `POST`/`GET` | `/api/projects/{id}/conversations` | `{title?}` / — | chat session(s) |
-| `GET`/`PATCH`/`DELETE` | `/api/conversations/{cid}` | — / `{title}` / — | a conversation + messages |
+| `POST`/`GET` | `/api/projects/{id}/conversations` | `{title?, settings?}` / `?q=` | create a session / list (pinned first, search) |
+| `GET`/`PATCH`/`DELETE` | `/api/conversations/{cid}` | — / `{title?, pinned?, settings?}` / — | a session: branch on screen, `branches`, settings |
+| `POST` | `/api/conversations/{cid}/fork` | `{message_id?, title?, settings?}` | a new session copying the branch up to that message (none = duplicate) |
+| `POST` | `/api/conversations/{cid}/select` | `{message_id}` | show the branch through that message |
+| `DELETE` | `/api/conversations/{cid}/messages/{mid}` | — | delete a message and what follows it |
+| `GET`  | `/api/conversations/{cid}/export` | — | the branch on screen as Markdown |
+| `POST` | `/api/conversations/{cid}/switch-check` | `{provider?, model?, mode?}` | `{same, from, to, tokens, warnings[]}` for a model change |
 | `POST` | `/api/conversations/{cid}/message[/stream]` | `{content, source?, skill?, provider?, context?}` | reply (JSON or SSE), persisted |
 | `GET`/`PUT` | `/api/projects/{id}/memory` | — / `{memory}` | per-project assistant memory |
 | `GET`  | `/api/coverage` | — | `{aggregate, rows}` metrics across all projects |
@@ -325,6 +335,7 @@ app/
   llm.py         LLM layer: streaming + tool calls (Anthropic / OpenAI-compatible)
   assistant.py   tex-copilot prompts (fix / polish / explain / ask)
   assistant_api.py  assistant routes: providers, settings, skills, prompts, agent turns
+  sessions_api.py   session routes: CRUD, branches (select / fork), export, model-switch check
   agent.py       the agent loop + project tools over a staged workspace
   providers.py   provider registry (config + in-app overrides, presets)
   secretbox.py   AES-256-GCM encryption for stored API keys
@@ -334,7 +345,7 @@ app/
   security.py    per-IP rate limiter (body-size cap + authz live in main.py)
   users.py       user accounts store (over SQLite)
   skills.py      assistant skill registry (built-ins + custom)
-  chat.py        persisted multi-turn conversations + messages
+  chat.py        sessions: a message tree per conversation (branches, forks, settings)
   models.py      pydantic schemas
   static/        single-page UI (HTML/CSS/JS + design tokens); sync.js and
                  complete.js are DOM-free engines shared with the node tests;

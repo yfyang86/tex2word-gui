@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__, assistant, assistant_api, ingest, llm, service, skills, sourcemap, tikzeditor
+from . import __version__, assistant, assistant_api, ingest, llm, service, sessions_api, skills, sourcemap, tikzeditor
 from .livepreview import PreviewEngine, PreviewError
 from .auth import AuthError, Authenticator
 from .chat import ChatError, ConversationStore
@@ -23,8 +23,6 @@ from .models import (
     AssistantRequest,
     AssistantResponse,
     ChatRequest,
-    ConversationCreate,
-    ConversationRename,
     ConvertRequest,
     ConvertResponse,
     FilePut,
@@ -93,6 +91,7 @@ except AuthError as exc:
 assistant_api.bind(registry=provider_registry, projects=projects, chats=chats, skills=skill_store,
                    prompts=prompt_store, settings=app_settings, authn=authn, config=config)
 app.include_router(assistant_api.router)
+app.include_router(sessions_api.router)
 
 # /api paths reachable without a session when auth is on.
 _OPEN_PATHS = {"/api/health", "/api/config", "/api/auth/login"}
@@ -809,40 +808,6 @@ def stream_assistant(req: AssistantRequest) -> StreamingResponse:
 
 
 # ── Chat sessions (multi-turn, persisted) ──────────────────────────────────
-@app.post("/api/projects/{project_id}/conversations", status_code=201)
-def create_conversation(project_id: str, req: ConversationCreate) -> dict:
-    if projects.get(project_id) is None:
-        raise HTTPException(status_code=404, detail="project not found")
-    return chats.create(project_id, title=req.title).detail()
-
-
-@app.get("/api/projects/{project_id}/conversations")
-def list_conversations(project_id: str) -> list[dict]:
-    return [c.brief() for c in chats.list(project_id)]
-
-
-@app.get("/api/conversations/{cid}")
-def get_conversation(cid: str) -> dict:
-    conv = chats.get(cid)
-    if conv is None:
-        raise HTTPException(status_code=404, detail="conversation not found")
-    return conv.detail()
-
-
-@app.patch("/api/conversations/{cid}")
-def rename_conversation(cid: str, req: ConversationRename) -> dict:
-    if not chats.rename(cid, req.title):
-        raise HTTPException(status_code=404, detail="conversation not found")
-    return chats.get(cid).detail()  # type: ignore[union-attr]
-
-
-@app.delete("/api/conversations/{cid}", status_code=204)
-def delete_conversation(cid: str) -> Response:
-    if not chats.delete(cid):
-        raise HTTPException(status_code=404, detail="conversation not found")
-    return Response(status_code=204)
-
-
 def _chat_assistant_request(req: ChatRequest) -> AssistantRequest:
     return AssistantRequest(
         action=req.skill or "ask", source=req.source or "",

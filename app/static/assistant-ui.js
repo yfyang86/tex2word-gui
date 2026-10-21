@@ -14,6 +14,9 @@ const AS = {
   providers: [], defaults: {}, presets: [], canManage: false,
   skills: [], prompts: [], settings: null,
   conv: null, convs: [],
+  mode: null,             // the open session's mode (else the last one used)
+  switch: null,           // a pending model-switch report (POST …/switch-check)
+  convQuery: "",          // sessions menu search
   running: null,          // {controller, live}
   useFile: true,          // include the open file as context
   ignoredSel: "",         // a selection the user dismissed
@@ -39,6 +42,13 @@ const AS_ICON = {
   file: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/></svg>',
   sel: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7V4h3M20 7V4h-3M4 17v3h3M20 17v3h-3M9 12h6"/></svg>',
   x: '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>',
+  split: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="5" r="2"/><circle cx="6" cy="19" r="2"/><circle cx="18" cy="9" r="2"/><path d="M6 7v10M18 11c0 4-6 3-11 6"/></svg>',
+  pin: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5M9 3h6l-1 6 4 4H6l4-4z"/></svg>',
+  dup: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="8" width="13" height="13" rx="2"/><path d="M4 16V5a2 2 0 0 1 2-2h11"/></svg>',
+  down: '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 10l5 5 5-5M5 21h14"/></svg>',
+  agent: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94z"/></svg>',
+  chat: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
+  warn: '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>',
 };
 
 const TOOL_LABEL = {
@@ -79,27 +89,67 @@ async function loadConversation() {
     AS.convs = await api("GET", `/api/projects/${state.project.id}/conversations`);
     if (AS.convs.length) AS.conv = await api("GET", `/api/conversations/${AS.convs[0].id}`);
   } catch { /* leave empty */ }
+  asApplySession();
   asRender();
 }
 
 async function asOpenConversation(id) {
   if (AS.running) return;
   try { AS.conv = await api("GET", `/api/conversations/${id}`); } catch (e) { alert(e.message); return; }
+  asApplySession();
   asRender();
 }
 
 async function asNewConversation() {
   if (!state.project || AS.running) return;
   AS.conv = null;   // created lazily with the first message
+  AS.mode = null;
+  asApplySession();
   asRender();
   $("#ask-input").focus();
 }
 
+// The session's own model and mode go back into the picker and the toggle.
+function asApplySession() {
+  const s = (AS.conv && AS.conv.settings) || {};
+  AS.mode = s.mode || null;
+  asHideSwitch();
+  asRenderMode();
+  asRenderModelPicker();
+  const msgs = (AS.conv && AS.conv.messages) || [];
+  if (s.model && msgs.length && asModelValue().join("::") !== `${s.provider}::${s.model}`) asCheckSwitch();
+}
+
+function asSessionSettings() {
+  const [provider, model] = asModelValue();
+  return { provider, model, mode: asMode() };
+}
+
 async function asEnsureConversation() {
   if (AS.conv && AS.conv.id) return AS.conv;
-  AS.conv = await api("POST", `/api/projects/${state.project.id}/conversations`, { title: "Chat" });
+  AS.conv = await api("POST", `/api/projects/${state.project.id}/conversations`,
+    { title: "Chat", settings: asSessionSettings() });
   AS.conv.messages = AS.conv.messages || [];
   return AS.conv;
+}
+
+// After a turn (or a branch change) the server's copy is the truth: ids,
+// versions and branches. A reply that never reached it (an error before the
+// stream, or a Stop it hasn't written yet) is kept from the local copy.
+async function asSyncConversation(pending, cid) {
+  if (!AS.conv || !AS.conv.id || (cid && AS.conv.id !== cid)) return;   // another session is open now
+  let fresh;
+  try { fresh = await api("GET", `/api/conversations/${AS.conv.id}`); } catch { return; }
+  if (!AS.conv || AS.conv.id !== fresh.id) return;
+  if (pending && !pending.live.id) {
+    const last = fresh.messages[fresh.messages.length - 1];
+    const saved = last && last.role === "assistant" && pending.parent && last.parent_id === pending.parent;
+    if (!saved) {
+      if (pending.user && !pending.user.id) fresh.messages.push(pending.user);
+      fresh.messages.push(pending.live);
+    }
+  }
+  AS.conv = fresh;
 }
 
 async function asRefreshConvList() {
@@ -110,6 +160,15 @@ async function asRefreshConvList() {
   asRenderHeader();
 }
 
+async function asSearchConvs(q) {
+  AS.convQuery = q;
+  if (!state.project) return;
+  try {
+    AS.convs = await api("GET", `/api/projects/${state.project.id}/conversations${q ? "?q=" + encodeURIComponent(q) : ""}`);
+  } catch { /* keep */ }
+  if (AS.convQuery === q) asRenderConvList();
+}
+
 // ── model + mode ────────────────────────────────────────────────────────
 function asModelValue() {
   const sel = $("#as-model");
@@ -118,29 +177,105 @@ function asModelValue() {
   return i < 0 ? [null, null] : [v.slice(0, i), v.slice(i + 2)];
 }
 
-function asRenderModelPicker() {
+function asRenderModelPicker(prefer) {
   const sel = $("#as-model");
   if (!sel) return;
   const usable = AS.providers.filter((p) => p.models && p.models.length);
   if (!usable.length) { sel.innerHTML = '<option value="">No model set up</option>'; sel.disabled = true; return; }
   sel.disabled = false;
-  const want = asLS.get(AS_MODEL_KEY) || (AS.defaults.provider ? `${AS.defaults.provider}::${AS.defaults.model || ""}` : "");
-  let found = false;
+  // the open session's model, else the last one picked, else the default
+  const sess = (AS.conv && AS.conv.settings) || {};
+  const wants = [prefer, sess.model ? `${sess.provider}::${sess.model}` : null, asLS.get(AS_MODEL_KEY),
+    AS.defaults.provider ? `${AS.defaults.provider}::${AS.defaults.model || ""}` : null].filter(Boolean);
+  const ok = new Set(usable.filter((p) => p.has_key).flatMap((p) => p.models.map((m) => `${p.name}::${m}`)));
+  const want = wants.find((w) => ok.has(w));
   sel.innerHTML = usable.map((p) => `<optgroup label="${esc(p.name)}${p.has_key ? "" : " — no API key"}">` +
     p.models.map((m) => {
       const v = `${p.name}::${m}`;
-      const s = v === want && p.has_key;
-      if (s) found = true;
-      return `<option value="${esc(v)}"${s ? " selected" : ""}${p.has_key ? "" : " disabled"}>${esc(m)}</option>`;
+      return `<option value="${esc(v)}"${v === want ? " selected" : ""}${p.has_key ? "" : " disabled"}>${esc(m)}</option>`;
     }).join("") + "</optgroup>").join("");
-  if (!found) {
+  if (!want) {
     const first = sel.querySelector("option:not([disabled])");
     if (first) first.selected = true;
   }
   sel.title = sel.value ? `Model: ${sel.value.replace("::", " · ")}` : "No usable model";
 }
 
+// ── model switch on a session ───────────────────────────────────────────
+async function asModelChanged() {
+  const sel = $("#as-model");
+  asLS.set(AS_MODEL_KEY, sel.value);
+  sel.title = `Model: ${sel.value.replace("::", " · ")}`;
+  if (!AS.conv || !AS.conv.id) return;
+  if (!(AS.conv.messages || []).length) return asSaveSessionSettings(asSessionSettings());
+  await asCheckSwitch();
+}
+
+async function asSaveSessionSettings(settings) {
+  if (!AS.conv || !AS.conv.id) return;
+  try {
+    const r = await api("PATCH", `/api/conversations/${AS.conv.id}`, { settings });
+    AS.conv.settings = r.settings;
+  } catch { /* the next turn records it anyway */ }
+}
+
+async function asCheckSwitch() {
+  const [provider, model] = asModelValue();
+  if (!provider || !AS.conv || !AS.conv.id) return asHideSwitch();
+  let r;
+  try { r = await api("POST", `/api/conversations/${AS.conv.id}/switch-check`, { provider, model, mode: asMode() }); }
+  catch { return; }
+  if (asModelValue().join("::") !== `${provider}::${model}`) return;   // changed again meanwhile
+  if (r.same) return asHideSwitch();
+  AS.switch = r;
+  asRenderSwitch();
+}
+
+function asHideSwitch() {
+  AS.switch = null;
+  const box = $("#as-switch");
+  if (box) { box.hidden = true; box.innerHTML = ""; }
+}
+
+function asRenderSwitch() {
+  const box = $("#as-switch"), r = AS.switch;
+  if (!box || !r) return;
+  const from = r.from.model, to = r.to.model;
+  const items = r.warnings.map((w) => `<li class="${w.level === "info" ? "info" : "warn"}" data-kind="${esc(w.kind)}">${esc(w.text)}</li>`).join("");
+  box.innerHTML = `<div class="as-switch-head">${AS_ICON.warn}<span>${r.from.available
+      ? `Switch this session from <b>${esc(from)}</b> to <b>${esc(to)}</b>?`
+      : `This session ran on <b>${esc(from)}</b>, which isn't available. Continue on <b>${esc(to)}</b>?`}</span></div>
+    <ul class="as-switch-list">${items}</ul>
+    <div class="as-switch-actions">
+      <button class="btn-small btn-primary" data-switch="apply">Switch to ${esc(to)}</button>
+      <button class="btn-small btn-secondary" data-switch="split" title="Copy this conversation into a new session that uses ${esc(to)}">New session on ${esc(to)}</button>
+      ${r.from.available ? `<button class="btn-small btn-secondary" data-switch="keep">Keep ${esc(from)}</button>` : ""}
+    </div>`;
+  box.hidden = false;
+}
+
+async function asSwitchAction(kind) {
+  const r = AS.switch;
+  if (!r || !AS.conv) return;
+  if (kind === "keep") {
+    asRenderModelPicker(`${r.from.provider}::${r.from.model}`);
+    asLS.set(AS_MODEL_KEY, $("#as-model").value);
+  } else if (kind === "apply") {
+    await asSaveSessionSettings({ provider: r.to.provider, model: r.to.model });
+  } else if (kind === "split") {
+    try {
+      AS.conv = await api("POST", `/api/conversations/${AS.conv.id}/fork`,
+        { settings: { provider: r.to.provider, model: r.to.model, mode: asMode() } });
+    } catch (e) { alert(e.message); return; }
+    asApplySession();
+    asRender();
+    asRefreshConvList();
+  }
+  asHideSwitch();
+}
+
 function asMode() {
+  if (AS.mode === "agent" || AS.mode === "chat") return AS.mode;
   const saved = asLS.get(AS_MODE_KEY);
   if (saved === "agent" || saved === "chat") return saved;
   return (AS.settings && AS.settings.default_mode) || "agent";
@@ -206,6 +341,15 @@ function asRender() {
 function asRenderHeader() {
   const t = $("#as-convo-title");
   if (t) t.textContent = (AS.conv && AS.conv.title) || "New chat";
+  const mode = $("#as-convo-mode");
+  if (mode) { mode.innerHTML = AS_ICON[asMode()]; mode.title = asMode() === "agent" ? "Agent session" : "Chat session"; }
+  const b = $("#as-branch-btn");
+  if (b) {
+    const n = (AS.conv && AS.conv.branches && AS.conv.branches.length) || 0;
+    b.hidden = n < 2;
+    $("#as-branch-n").textContent = String(n);
+    b.title = `${n} branches in this session — pick one`;
+  }
 }
 
 function asRenderSend() {
@@ -235,8 +379,26 @@ function asRenderTranscript() {
     return;
   }
   slot.innerHTML = "";
+  const src = AS.conv.forked_from;
+  if (src && src.conversation_id) {
+    const el = document.createElement("div");
+    el.className = "as-forked";
+    el.innerHTML = `${AS_ICON.split}<span>Split from <button class="tg-link" data-open-conv="${esc(src.conversation_id)}">${esc(src.title || "a session")}</button> · ${src.messages} message${src.messages === 1 ? "" : "s"} copied</span>`;
+    slot.appendChild(el);
+  }
   msgs.forEach((m, i) => slot.appendChild(asMsgNode(m, i, msgs)));
   slot.scrollTop = slot.scrollHeight;
+}
+
+// "‹ 2/3 ›" on a message that has other versions (edits, regenerations).
+function asBranchNav(m) {
+  const b = m.branch;
+  if (!b || !m.id) return "";
+  const off = AS.running ? " disabled" : "";
+  return `<span class="as-branch" title="Versions of this message">` +
+    `<button class="as-act" data-act="prev" aria-label="Previous version"${b.index === 0 ? " disabled" : off}>‹</button>` +
+    `<span class="as-branch-n">${b.index + 1}/${b.count}</span>` +
+    `<button class="as-act" data-act="next" aria-label="Next version"${b.index === b.count - 1 ? " disabled" : off}>›</button></span>`;
 }
 
 function asStepLine(s) {
@@ -307,9 +469,11 @@ function asMsgNode(m, i, msgs) {
   if (m.role === "user") {
     const skill = m.skill ? `<span class="chat-skill">/${esc(m.skill)}</span> ` : "";
     const text = m.skill && m.content.startsWith("/" + m.skill) ? m.content.slice(m.skill.length + 1).trim() : m.content;
-    el.innerHTML = `<div class="as-bubble">${skill}${esc(text)}</div>` +
-      (m.id && !AS.running ? `<div class="as-actions"><button class="as-act" data-act="edit" title="Edit and resend">${AS_ICON.edit}</button>` +
-        `<button class="as-act" data-act="copy" title="Copy">${AS_ICON.copy}</button></div>` : "");
+    el.innerHTML = `<div class="as-bubble">${skill}${esc(text)}</div>` + asBranchNav(m) +
+      (m.id && !AS.running ? `<div class="as-actions"><button class="as-act" data-act="edit" title="Edit and resend (keeps this version as a branch)">${AS_ICON.edit}</button>` +
+        `<button class="as-act" data-act="copy" title="Copy">${AS_ICON.copy}</button>` +
+        `<button class="as-act" data-act="split" title="Split: a new session with the conversation up to here">${AS_ICON.split}</button>` +
+        `<button class="as-act" data-act="delete" title="Delete this message and its replies">${AS_ICON.trash}</button></div>` : "");
     return el;
   }
   const meta = m.meta || {};
@@ -324,11 +488,17 @@ function asMsgNode(m, i, msgs) {
   if (meta.usage) bits.push(`${asFmtTokens(meta.usage.input + meta.usage.output)} tokens`);
   if (meta.ms) bits.push(`${(meta.ms / 1000).toFixed(1)} s`);
   if (meta.mode === "chat") bits.push("chat");
-  const last = i === msgs.length - 1;
-  const foot = m.live ? "" : `<div class="as-foot"><span class="as-meta-line">${bits.join(" · ")}</span><span class="spacer"></span>` +
+  const foot = m.live ? "" : `<div class="as-foot">${asBranchNav(m)}<span class="as-meta-line">${bits.join(" · ")}</span><span class="spacer"></span>` +
     (m.content ? `<button class="as-act" data-act="copy" title="Copy the reply">${AS_ICON.copy}</button>` : "") +
-    (last && !AS.running ? `<button class="as-act" data-act="regen" title="Regenerate">${AS_ICON.redo}</button>` : "") + "</div>";
-  el.innerHTML = think + asSteps(meta.steps, m.live) + body + notices + stopped + err + asChanges(m) + foot;
+    (!AS.running && m.id ? `<button class="as-act" data-act="split" title="Split: a new session with the conversation up to here">${AS_ICON.split}</button>` : "") +
+    (!AS.running ? `<button class="as-act" data-act="regen" title="Regenerate (keeps this reply as a version)">${AS_ICON.redo}</button>` : "") + "</div>";
+  // a divider where the branch moves to another model
+  let prevModel = null;
+  for (let k = i - 1; k >= 0 && !prevModel; k--) if (msgs[k].role === "assistant") prevModel = (msgs[k].meta || {}).model || null;
+  if (!prevModel && meta.switched_from) prevModel = meta.switched_from.model;
+  const sw = prevModel && meta.model && prevModel !== meta.model
+    ? `<div class="as-switched">Model changed: <b>${esc(prevModel)}</b> → <b>${esc(meta.model)}</b></div>` : "";
+  el.innerHTML = sw + think + asSteps(meta.steps, m.live) + body + notices + stopped + err + asChanges(m) + foot;
   asDecorateCode(el);
   return el;
 }
@@ -368,13 +538,16 @@ function asParse(text) {
   return { skill: null, rest: text };
 }
 
-async function asSend(override) {
+// opts.parent_id: answer under this message ("root" = a new first message);
+// opts.regenerate: reply again to this saved user message.
+async function asSend(override, opts = {}) {
   if (AS.running) return asStop();
   const input = $("#ask-input");
-  const raw = (override != null ? override : input.value).trim();
-  if (!raw || !state.project) return;
+  const raw = opts.regenerate ? "" : (override != null ? override : input.value).trim();
+  if ((!raw && !opts.regenerate) || !state.project) return;
   if (!asUsable()) { asOpenSettings("providers"); return; }
-  const { skill, rest } = asParse(raw);
+  const { skill, rest } = opts.regenerate ? { skill: null, rest: "" } : asParse(raw);
+  asHideSwitch();   // sending on the new model is choosing it
   const [provider, model] = asModelValue();
   if (state.dirty && state.activeFile) { try { await saveActive(false); } catch { /* sent anyway */ } }
   let conv;
@@ -390,19 +563,26 @@ async function asSend(override) {
     selection_lines: file && sel ? sel.lines : null,
     cursor_line: file ? ta.value.slice(0, ta.selectionStart).split("\n").length : null,
     files: asMentions(raw),
+    parent_id: opts.parent_id || null,
+    regenerate: opts.regenerate || null,
   };
   conv.messages = conv.messages || [];
-  const userMsg = { role: "user", content: raw, skill };
+  const userMsg = opts.regenerate ? null : { role: "user", content: raw, skill };
   const live = { role: "assistant", content: "", meta: { steps: [], model }, live: true };
-  conv.messages.push(userMsg, live);
-  if (override == null) { input.value = ""; asAutoGrow(); }
+  if (userMsg) conv.messages.push(userMsg);
+  conv.messages.push(live);
+  if (override == null && !opts.regenerate) { input.value = ""; asAutoGrow(); }
   const controller = new AbortController();
   AS.running = { controller, live };
   asRender();
   await asStream(`/api/conversations/${conv.id}/agent`, body, controller, (ev) => {
     const meta = live.meta;
     switch (ev.type) {
-      case "start": Object.assign(userMsg, ev.user_message); meta.model = ev.model; meta.mode = ev.mode; break;
+      case "start":
+        if (userMsg) Object.assign(userMsg, ev.user_message);
+        meta.model = ev.model; meta.mode = ev.mode;
+        if (ev.switched_from) meta.switched_from = ev.switched_from;
+        break;
       case "text": live.content += ev.text; break;
       case "reasoning": meta.reasoning = (meta.reasoning || "") + ev.text; break;
       case "tool_start": meta.steps.push({ id: ev.id, name: ev.name, args: ev.args }); break;
@@ -422,8 +602,13 @@ async function asSend(override) {
     live.live = false;
     live.meta.error = err;
   });
-  if (controller.signal.aborted) { live.live = false; live.meta.stopped = true; }
+  const stopped = controller.signal.aborted;
+  if (stopped) { live.live = false; live.meta.stopped = true; }
   AS.running = null;
+  asRender();
+  // a stopped turn is written by the server as its stream closes
+  if (stopped) await new Promise((r) => setTimeout(r, 400));
+  await asSyncConversation({ live, user: userMsg, parent: userMsg ? userMsg.id : opts.regenerate }, conv.id);
   asRender();
   asRefreshConvList();
 }
@@ -472,24 +657,61 @@ async function asStream(url, payload, controller, onEvent, onError) {
 }
 
 // ── message actions ─────────────────────────────────────────────────────
-async function asTruncateFrom(index) {
-  const msgs = AS.conv.messages;
-  const m = msgs[index];
-  if (!m || !m.id) return false;
-  await api("POST", `/api/conversations/${AS.conv.id}/truncate`, { message_id: m.id });
-  msgs.splice(index);
-  return true;
-}
-
-async function asRegenerate(i) {
+// Regenerate adds another version of the reply; the old one stays a branch.
+function asRegenerate(i) {
   const msgs = AS.conv.messages;
   let u = i - 1;
   while (u >= 0 && msgs[u].role !== "user") u--;
   if (u < 0) return;
-  const text = msgs[u].content;
-  try { await asTruncateFrom(u); } catch (e) { alert(e.message); return; }
+  const user = msgs[u];
+  if (!user.id) {   // never reached the server: send it again
+    const parent = u > 0 ? msgs[u - 1].id : null;
+    msgs.splice(u);
+    return asSend(user.content, { parent_id: parent || "root" });
+  }
+  msgs.splice(u + 1);
+  asSend(null, { regenerate: user.id });
+}
+
+// Show another version of message i (and the newest branch below it).
+async function asPickVersion(i, step) {
+  const m = AS.conv.messages[i];
+  const b = m && m.branch;
+  if (!b || AS.running) return;
+  const target = b.ids[b.index + step];
+  if (!target) return;
+  await asSelectBranch(target);
+}
+
+async function asSelectBranch(mid) {
+  try { AS.conv = await api("POST", `/api/conversations/${AS.conv.id}/select`, { message_id: mid }); }
+  catch (e) { alert(e.message); return; }
   asRender();
-  asSend(text);
+}
+
+// Split: a new session holding the conversation up to message i.
+async function asSplitAt(i) {
+  const m = AS.conv.messages[i];
+  if (!m || !m.id || AS.running) return;
+  let conv;
+  try { conv = await api("POST", `/api/conversations/${AS.conv.id}/fork`, { message_id: m.id, settings: asSessionSettings() }); }
+  catch (e) { alert(e.message); return; }
+  AS.conv = conv;
+  asApplySession();
+  asRender();
+  asRefreshConvList();
+  $("#ask-input").focus();
+}
+
+async function asDeleteMessage(i) {
+  const m = AS.conv.messages[i];
+  if (!m || !m.id || AS.running) return;
+  const below = AS.conv.messages.length - i - 1;
+  if (!confirm(below ? `Delete this message and the ${below} after it (in every branch below it)?` : "Delete this message?")) return;
+  try { AS.conv = (await api("DELETE", `/api/conversations/${AS.conv.id}/messages/${m.id}`)).conversation; }
+  catch (e) { alert(e.message); return; }
+  asRender();
+  asRefreshConvList();
 }
 
 function asEditMessage(i, node) {
@@ -513,9 +735,11 @@ function asEditMessage(i, node) {
     if (b.dataset.edit === "cancel") return asRenderTranscript();
     const text = ta.value.trim();
     if (!text) return;
-    try { await asTruncateFrom(i); } catch (err) { alert(err.message); return; }
-    asRender();
-    asSend(text);
+    // the edit becomes a new version next to the original, which stays a branch
+    const msgs = AS.conv.messages;
+    const parent = m.parent_id || (i > 0 ? msgs[i - 1].id : null);
+    msgs.splice(i);
+    asSend(text, { parent_id: parent || "root" });
   });
 }
 
@@ -674,15 +898,86 @@ function asMenu(menuSel, btnSel, open) {
   btn.setAttribute("aria-expanded", String(open));
 }
 
+// The sessions manager: search, new, and per session open / pin / rename /
+// duplicate / export / delete.
 function asRenderConvMenu() {
   const menu = $("#as-convo-menu");
+  if (!menu.querySelector(".as-convo-search")) {
+    menu.innerHTML = `<div class="as-convo-tools">
+        <input type="search" class="as-convo-search" placeholder="Search sessions…" aria-label="Search sessions">
+        <button class="btn-small btn-primary" data-conv-new title="Start a new session with the model and mode below">+ New</button>
+      </div><div class="as-convo-list"></div>`;
+  }
+  const q = menu.querySelector(".as-convo-search");
+  if (q.value !== AS.convQuery) q.value = AS.convQuery;
+  asRenderConvList();
+}
+
+function asRenderConvList() {
+  const list = $("#as-convo-menu .as-convo-list");
+  if (!list) return;
   const cur = AS.conv && AS.conv.id;
-  const rows = AS.convs.map((c) => `<div class="as-menu-row${c.id === cur ? " current" : ""}" data-conv="${esc(c.id)}" role="menuitem" tabindex="-1">
-      <span class="as-menu-title">${esc(c.title)}</span><span class="as-menu-time">${esc(relTime(c.updated_at))}</span>
+  const rows = AS.convs.map((c) => {
+    const s = c.settings || {};
+    const mode = s.mode === "chat" ? "chat" : "agent";
+    const sub = [s.model, `${c.message_count} message${c.message_count === 1 ? "" : "s"}`,
+      c.branch_count > 1 ? `${c.branch_count} branches` : null, relTime(c.updated_at)].filter(Boolean).join(" · ");
+    return `<div class="as-menu-row as-sess${c.id === cur ? " current" : ""}${c.pinned ? " pinned" : ""}" data-conv="${esc(c.id)}" role="menuitem" tabindex="-1" title="${esc(c.preview || c.title)}">
+      <span class="as-sess-mode ${mode}" title="${mode === "agent" ? "Agent session" : "Chat session"}">${AS_ICON[mode]}</span>
+      <span class="as-sess-main"><span class="as-menu-title">${esc(c.title)}</span>
+        <span class="as-menu-sub">${c.forked_from ? AS_ICON.split + " " : ""}${esc(sub)}</span></span>
+      <button class="as-act${c.pinned ? " on" : ""}" data-conv-act="pin" title="${c.pinned ? "Unpin" : "Pin to the top"}" aria-pressed="${c.pinned}">${AS_ICON.pin}</button>
       <button class="as-act" data-conv-act="rename" title="Rename">${AS_ICON.edit}</button>
-      <button class="as-act" data-conv-act="delete" title="Delete">${AS_ICON.trash}</button></div>`).join("");
-  menu.innerHTML = `<button class="as-menu-new" data-conv-new role="menuitem">+ New chat</button>` +
-    (rows || '<div class="as-menu-empty">No earlier chats in this project.</div>');
+      <button class="as-act" data-conv-act="duplicate" title="Duplicate">${AS_ICON.dup}</button>
+      <button class="as-act" data-conv-act="export" title="Export as Markdown">${AS_ICON.down}</button>
+      <button class="as-act" data-conv-act="delete" title="Delete">${AS_ICON.trash}</button></div>`;
+  }).join("");
+  list.innerHTML = rows || `<div class="as-menu-empty">${AS.convQuery ? "No session matches." : "No earlier sessions in this project."}</div>`;
+}
+
+async function asConvAction(id, act) {
+  const c = AS.convs.find((x) => x.id === id);
+  if (act === "rename") {
+    const title = await modal("Rename session", "Title", c ? c.title : "");
+    if (!title || !title.trim()) return;
+    await api("PATCH", `/api/conversations/${id}`, { title: title.trim() }).catch((err) => alert(err.message));
+    if (AS.conv && AS.conv.id === id) AS.conv.title = title.trim();
+  } else if (act === "pin") {
+    await api("PATCH", `/api/conversations/${id}`, { pinned: !(c && c.pinned) }).catch((err) => alert(err.message));
+  } else if (act === "duplicate") {
+    if (AS.running) return;
+    try { AS.conv = await api("POST", `/api/conversations/${id}/fork`, {}); } catch (err) { alert(err.message); return; }
+    asApplySession(); asRender();
+  } else if (act === "export") {
+    return asExport(id, c ? c.title : "chat");
+  } else if (act === "delete") {
+    if (!confirm(`Delete the session “${c ? c.title : ""}”? This can't be undone.`)) return;
+    await api("DELETE", `/api/conversations/${id}`).catch((err) => alert(err.message));
+    if (AS.conv && AS.conv.id === id) { AS.conv = null; asApplySession(); asRender(); }
+  }
+  await asSearchConvs(AS.convQuery);
+  asRenderHeader();
+}
+
+async function asExport(id, title) {
+  let res;
+  try { res = await fetch(`/api/conversations/${id}/export`, { headers: authHeaders() }); } catch (e) { alert(e.message); return; }
+  if (!res.ok) { alert(`Export failed (${res.status})`); return; }
+  const a = document.createElement("a");
+  a.href = URL.createObjectURL(await res.blob());
+  a.download = (title || "chat").replace(/[^\w.-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60) + ".md";
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+}
+
+function asRenderBranchMenu() {
+  const menu = $("#as-branch-menu");
+  const branches = ((AS.conv && AS.conv.branches) || []).slice().sort((a, b) => (a.updated_at < b.updated_at ? 1 : -1));
+  menu.innerHTML = `<div class="as-menu-head">Branches in this session</div>` + branches.map((b) =>
+    `<button class="as-menu-item as-branch-row${b.current ? " current" : ""}" data-branch="${esc(b.head_id)}" role="menuitem">
+      <span class="as-menu-title">${esc(b.label || "(empty)")}</span>
+      ${b.reply ? `<span class="as-menu-sub as-branch-reply">↳ ${esc(b.reply)}</span>` : ""}
+      <span class="as-menu-sub">${b.current ? "Showing · " : ""}${b.messages} message${b.messages === 1 ? "" : "s"} · ${esc(relTime(b.updated_at))}</span></button>`).join("");
 }
 
 function asRenderPromptsMenu() {
@@ -1023,10 +1318,19 @@ document.addEventListener("DOMContentLoaded", () => {
     const it = e.target.closest(".ac-item");
     if (it) { e.preventDefault(); asAcAccept(+it.dataset.i); }
   });
-  $("#as-model").addEventListener("change", (e) => { asLS.set(AS_MODEL_KEY, e.target.value); e.target.title = `Model: ${e.target.value.replace("::", " · ")}`; });
+  $("#as-model").addEventListener("change", asModelChanged);
   document.querySelectorAll(".as-mode [data-mode]").forEach((b) => b.addEventListener("click", () => {
-    asLS.set(AS_MODE_KEY, b.dataset.mode); asRenderMode();
+    if (asMode() === b.dataset.mode) return;
+    AS.mode = b.dataset.mode;
+    asLS.set(AS_MODE_KEY, b.dataset.mode);
+    asRenderMode(); asRenderHeader();
+    asSaveSessionSettings({ mode: b.dataset.mode });   // the session remembers it
+    if (AS.switch) asCheckSwitch();                     // tool support may differ
   }));
+  $("#as-switch").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-switch]");
+    if (b) asSwitchAction(b.dataset.switch);
+  });
   $("#btn-new-chat").addEventListener("click", asNewConversation);
   $("#as-settings-btn").addEventListener("click", () => asOpenSettings());
   $("#as-chips").addEventListener("click", (e) => {
@@ -1045,6 +1349,8 @@ document.addEventListener("DOMContentLoaded", () => {
   $("#assistant-slot").addEventListener("click", async (e) => {
     const t = e.target;
     if (t.closest("[data-open-settings]")) return asOpenSettings("providers");
+    const oc = t.closest("[data-open-conv]");
+    if (oc) return asOpenConversation(oc.dataset.openConv);
     const sug = t.closest("[data-skill]");
     if (sug) { input.value = `/${sug.dataset.skill} `; input.focus(); asAutoGrow(); return; }
     const node = t.closest(".as-msg");
@@ -1063,39 +1369,53 @@ document.addEventListener("DOMContentLoaded", () => {
     if (act.dataset.act === "copy") return asCopy(m.content.replace(/\n\n_\(Proposed edits to: [^\n]*\)_$/, ""), act);
     if (act.dataset.act === "edit") return asEditMessage(i, node);
     if (act.dataset.act === "regen" || act.dataset.act === "retry") return asRegenerate(i);
+    if (act.dataset.act === "prev" || act.dataset.act === "next") return asPickVersion(i, act.dataset.act === "next" ? 1 : -1);
+    if (act.dataset.act === "split") return asSplitAt(i);
+    if (act.dataset.act === "delete") return asDeleteMessage(i);
   });
 
   // conversations menu
   $("#as-convo-btn").addEventListener("click", async () => {
     const open = $("#as-convo-menu").hidden;
-    if (open) { await asRefreshConvList(); asRenderConvMenu(); }
+    if (open) { await asSearchConvs(AS.convQuery); asRenderConvMenu(); }
     asMenu("#as-convo-menu", "#as-convo-btn", open);
+    if (open) $("#as-convo-menu .as-convo-search")?.focus();
+  });
+  let convSearchTimer = 0;
+  $("#as-convo-menu").addEventListener("input", (e) => {
+    if (!e.target.classList.contains("as-convo-search")) return;
+    clearTimeout(convSearchTimer);
+    const q = e.target.value.trim();
+    convSearchTimer = setTimeout(() => asSearchConvs(q), 180);
+  });
+  $("#as-convo-menu").addEventListener("keydown", (e) => {
+    if (e.key === "Escape") { e.preventDefault(); asMenu("#as-convo-menu", "#as-convo-btn", false); $("#as-convo-btn").focus(); }
+    if (e.key === "Enter" && e.target.classList.contains("as-convo-search")) {
+      const first = $("#as-convo-menu [data-conv]");
+      if (first) { asMenu("#as-convo-menu", "#as-convo-btn", false); asOpenConversation(first.dataset.conv); }
+    }
   });
   $("#as-convo-menu").addEventListener("click", async (e) => {
     if (e.target.closest("[data-conv-new]")) { asMenu("#as-convo-menu", "#as-convo-btn", false); return asNewConversation(); }
     const row = e.target.closest("[data-conv]");
     if (!row) return;
-    const id = row.dataset.conv;
     const act = e.target.closest("[data-conv-act]");
-    if (act && act.dataset.convAct === "rename") {
-      const c = AS.convs.find((x) => x.id === id);
-      const title = await modal("Rename chat", "Title", c ? c.title : "");
-      if (title && title.trim()) {
-        await api("PATCH", `/api/conversations/${id}`, { title: title.trim() }).catch((err) => alert(err.message));
-        if (AS.conv && AS.conv.id === id) AS.conv.title = title.trim();
-        await asRefreshConvList(); asRenderConvMenu();
-      }
-      return;
-    }
-    if (act && act.dataset.convAct === "delete") {
-      if (!confirm("Delete this chat?")) return;
-      await api("DELETE", `/api/conversations/${id}`).catch((err) => alert(err.message));
-      if (AS.conv && AS.conv.id === id) AS.conv = null;
-      await asRefreshConvList(); asRenderConvMenu(); asRender();
-      return;
-    }
+    if (act) return asConvAction(row.dataset.conv, act.dataset.convAct);
     asMenu("#as-convo-menu", "#as-convo-btn", false);
-    asOpenConversation(id);
+    asOpenConversation(row.dataset.conv);
+  });
+
+  // branches menu
+  $("#as-branch-btn").addEventListener("click", () => {
+    const open = $("#as-branch-menu").hidden;
+    if (open) asRenderBranchMenu();
+    asMenu("#as-branch-menu", "#as-branch-btn", open);
+  });
+  $("#as-branch-menu").addEventListener("click", (e) => {
+    const b = e.target.closest("[data-branch]");
+    if (!b || AS.running) return;
+    asMenu("#as-branch-menu", "#as-branch-btn", false);
+    asSelectBranch(b.dataset.branch);
   });
 
   // saved prompts menu
@@ -1114,6 +1434,7 @@ document.addEventListener("DOMContentLoaded", () => {
   });
   document.addEventListener("mousedown", (e) => {
     if (!e.target.closest(".as-convo")) asMenu("#as-convo-menu", "#as-convo-btn", false);
+    if (!e.target.closest(".as-branches")) asMenu("#as-branch-menu", "#as-branch-btn", false);
     if (!e.target.closest(".as-prompts")) asMenu("#as-prompts-menu", "#as-prompts-btn", false);
   });
 

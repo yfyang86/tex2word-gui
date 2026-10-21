@@ -92,14 +92,6 @@ class LoginRequest(BaseModel):
     password: str
 
 
-class ConversationCreate(BaseModel):
-    title: str = "New chat"
-
-
-class ConversationRename(BaseModel):
-    title: str
-
-
 class ChatRequest(BaseModel):
     content: str
     source: str = ""
