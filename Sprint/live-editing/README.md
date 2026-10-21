@@ -13,13 +13,14 @@ while typing.
 | [05](sprint-05-table-generator.md) | Visual LaTeX table generator (left panel tool), edit tables in place | done |
 | [06](sprint-06-tikz-editor.md) | Embedded TikZ editor (left panel tool), edit pictures in place | done |
 | [07](sprint-07-ux-polish.md) | File-type icons, file outline, line numbers + status bar, dark theme, narrow layout, shortcuts | done |
+| [08](sprint-08-assistant.md) | Assistant: in-app providers/models with encrypted keys, tool-using agent with reviewed edits, skills + prompts CRUD | done |
 
 ## How it is tested
 
 | Layer | Command | What it covers |
 | --- | --- | --- |
 | Python | `uv run pytest -q` | source map, instrumentation invisibility, quick ≡ full, API |
-| JS unit | `node --test tests/js/*.test.js` | `sync.js`, `complete.js`, `symbols.js`, `tablegen.js`, `tikzedit.js`, `icons.js`, `outline.js` (no browser needed) |
+| JS unit | `node --test tests/js/*.test.js` | `sync.js`, `complete.js`, `symbols.js`, `tablegen.js`, `tikzedit.js`, `icons.js`, `outline.js`, `markdown.js` (no browser needed) |
 | End-to-end | `NODE_PATH=$(npm root -g) node tests/e2e/run.js` | the real UI in Chromium via Playwright |
 
 The e2e runner boots the app on a throwaway SQLite DB (`TEX2WORD_DB`) using

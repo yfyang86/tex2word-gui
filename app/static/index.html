@@ -303,39 +303,73 @@
             <div class="placeholder">Open the <b>Preview</b> tab to build the document outline.</div>
           </div>
         </div>
-        <!-- Assistant tab -->
+        <!-- Assistant tab (app/static/assistant-ui.js) -->
         <div id="tab-assistant" hidden>
-          <div class="assistant-bar">
-            <div class="assistant-meta" id="assistant-meta">tex-copilot</div>
-            <select id="assistant-provider" class="provider-picker" title="Provider / model" hidden></select>
-            <button class="icon-btn" id="btn-memory" title="Project memory">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 2a5 5 0 0 0-5 5v1a4 4 0 0 0 0 8 4 4 0 0 0 8 0 4 4 0 0 0 0-8V7a5 5 0 0 0-3-5zM12 2v20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
-            <button class="icon-btn" id="btn-new-chat" title="New chat">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-            </button>
-          </div>
-          <div id="assistant-slot">
-            <div class="placeholder">Ask tex-copilot to <b>Fix</b>, <b>Polish</b>, or <b>Explain</b> the current file.</div>
-          </div>
-          <div class="composer">
-            <div class="assistant-actions">
-              <button class="btn-secondary" data-act="fix" title="Fix conversion warnings using the last report">Fix</button>
-              <button class="btn-secondary" data-act="polish">Polish</button>
-              <button class="btn-secondary" data-act="explain">Explain</button>
+          <div class="as-bar">
+            <div class="as-convo">
+              <button class="as-convo-btn" id="as-convo-btn" aria-haspopup="menu" aria-expanded="false" title="Conversations">
+                <span id="as-convo-title">New chat</span>
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none"><polyline points="6 9 12 15 18 9" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <div class="as-menu as-convo-menu" id="as-convo-menu" role="menu" hidden></div>
             </div>
-            <div class="ask-row">
-              <div class="ask-field">
-                <textarea id="ask-input" rows="1" placeholder="Ask — @file for context, / for commands. Shift+Enter to send" autocomplete="off" spellcheck="false"></textarea>
-                <div id="ac-menu" class="ac-menu" hidden></div>
+            <div class="spacer"></div>
+            <button class="icon-btn" id="btn-new-chat" title="New chat">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>
+            </button>
+            <button class="icon-btn" id="btn-memory" title="Project memory"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M12 2a5 5 0 0 0-5 5v1a4 4 0 0 0 0 8 4 4 0 0 0 8 0 4 4 0 0 0 0-8V7a5 5 0 0 0-3-5zM12 2v20" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+            <button class="icon-btn" id="as-settings-btn" title="Assistant settings: providers, models, skills, prompts">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            </button>
+          </div>
+          <div id="assistant-slot" class="as-transcript" aria-live="polite"></div>
+          <div class="composer">
+            <div class="as-chips" id="as-chips"></div>
+            <div class="ask-field">
+              <textarea id="ask-input" rows="2" placeholder="Ask about the paper, or ask for a change… (/ commands, @ files)" autocomplete="off" spellcheck="false" aria-label="Message the assistant"></textarea>
+              <div id="ac-menu" class="ac-menu" hidden></div>
+            </div>
+            <div class="as-controls">
+              <select id="as-model" class="as-model" title="Model" aria-label="Model"></select>
+              <div class="seg-toggle as-mode" role="group" aria-label="Assistant mode">
+                <button data-mode="agent" title="Agent: reads the project, runs checks and proposes edits for you to review">Agent</button>
+                <button data-mode="chat" title="Chat: answers from the open file and @-mentioned files, no tools">Chat</button>
               </div>
-              <button class="btn-primary" id="ask-send">Ask</button>
+              <div class="as-prompts">
+                <button class="icon-btn" id="as-prompts-btn" title="Insert a saved prompt" aria-haspopup="menu" aria-expanded="false">
+                  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z"/></svg>
+                </button>
+                <div class="as-menu as-prompts-menu" id="as-prompts-menu" role="menu" hidden></div>
+              </div>
+              <div class="spacer"></div>
+              <button class="btn-primary as-send" id="ask-send" title="Send (Enter)">Send</button>
             </div>
           </div>
         </div>
       </div>
     </aside>
   </main>
+
+  <!-- ── assistant settings (app/static/assistant-ui.js) ── -->
+  <div id="as-settings" class="modal" hidden>
+    <div class="modal-card as-settings-card" role="dialog" aria-labelledby="as-settings-title">
+      <div class="as-set-head">
+        <h3 id="as-settings-title">Assistant settings</h3>
+        <nav class="tabs" id="as-set-tabs">
+          <button class="tab active" data-stab="providers">Providers &amp; models</button>
+          <button class="tab" data-stab="skills">Skills</button>
+          <button class="tab" data-stab="prompts">Prompts</button>
+          <button class="tab" data-stab="behaviour">Behaviour</button>
+        </nav>
+        <div class="spacer"></div>
+        <button class="icon-btn" id="as-settings-close" title="Close (Esc)">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none"><line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div class="as-set-ro" id="as-set-ro" hidden>Only an admin can change these settings; you can view them.</div>
+      <div class="as-set-body" id="as-set-body"></div>
+    </div>
+  </div>
 
   <!-- ── keyboard shortcuts (app/static/ux.js) ── -->
   <div id="shortcuts-modal" class="modal" hidden>
@@ -361,7 +395,8 @@
             <div><dt><kbd class="mod">Ctrl</kbd><kbd>Alt</kbd><kbd>B</kbd></dt><dd>Show / hide the right panel</dd></div>
             <div><dt>Click in the preview</dt><dd>Jump to that line of the source</dd></div>
             <div><dt>Outline item</dt><dd>Jump to it; an <code>\input</code> opens its file</dd></div>
-            <div><dt><kbd>Shift</kbd><kbd>Enter</kbd></dt><dd>Send a message to the assistant</dd></div>
+            <div><dt><kbd>Enter</kbd></dt><dd>Send a message to the assistant (<kbd>Shift</kbd><kbd>Enter</kbd> for a new line)</dd></div>
+            <div><dt><kbd>/</kbd> · <kbd>@</kbd></dt><dd>In the assistant: pick a skill · mention a file</dd></div>
             <div><dt><kbd>?</kbd></dt><dd>This list</dd></div>
             <div><dt><kbd>Esc</kbd></dt><dd>Close a dialog</dd></div>
           </dl>
@@ -509,6 +544,7 @@
 
   <script src="/static/icons.js"></script>
   <script src="/static/outline.js"></script>
+  <script src="/static/markdown.js"></script>
   <script src="/static/sync.js"></script>
   <script src="/static/symbols.js"></script>
   <script src="/static/complete.js"></script>
@@ -518,5 +554,6 @@
   <script src="/static/tablegen-ui.js"></script>
   <script src="/static/tikzedit-ui.js"></script>
   <script src="/static/ux.js"></script>
+  <script src="/static/assistant-ui.js"></script>
 </body>
 </html>

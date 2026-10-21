@@ -29,6 +29,7 @@ dependencies = [
     "mistune>=3.0",
     "citeproc-py>=0.6",
     "pyjwt[crypto]>=2.8",
+    "cryptography>=42",
 ]
 
 [project.optional-dependencies]

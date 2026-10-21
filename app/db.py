@@ -79,6 +79,36 @@ CREATE TABLE IF NOT EXISTS messages (
     FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
 );
 
+CREATE TABLE IF NOT EXISTS providers (
+    name          TEXT PRIMARY KEY,   -- a config.toml provider's name = an override
+    type          TEXT,               -- NULL fields inherit from config.toml
+    api_base      TEXT,
+    models        TEXT,               -- JSON list of model names
+    default_model TEXT,
+    api_key_enc   TEXT,               -- AES-GCM ciphertext (secretbox.py), never the key
+    key_hint      TEXT NOT NULL DEFAULT '',
+    api_key_env   TEXT,
+    tools         INTEGER,
+    enabled       INTEGER NOT NULL DEFAULT 1,
+    created_at    TEXT NOT NULL,
+    updated_at    TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS app_settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS prompts (
+    id          TEXT PRIMARY KEY,
+    title       TEXT NOT NULL,
+    body        TEXT NOT NULL,
+    description TEXT NOT NULL DEFAULT '',
+    created_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS artifacts (
     id           TEXT PRIMARY KEY,
     filename     TEXT NOT NULL,
@@ -117,6 +147,12 @@ _MIGRATIONS = {
     "conversations": [
         ("summary", "ALTER TABLE conversations ADD COLUMN summary TEXT NOT NULL DEFAULT ''"),
         ("summary_upto", "ALTER TABLE conversations ADD COLUMN summary_upto INTEGER NOT NULL DEFAULT 0"),
+    ],
+    "messages": [
+        ("meta", "ALTER TABLE messages ADD COLUMN meta TEXT NOT NULL DEFAULT '{}'"),
+    ],
+    "skills": [
+        ("mode", "ALTER TABLE skills ADD COLUMN mode TEXT NOT NULL DEFAULT 'agent'"),
     ],
 }
 

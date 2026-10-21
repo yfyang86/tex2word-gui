@@ -6,6 +6,11 @@
 #
 # Secrets: each provider takes EITHER an inline `api_key` OR `api_key_env`
 # (the name of an environment variable to read the key from — preferred).
+# Providers, models and keys can also be managed in the app (Assistant →
+# settings). Keys entered there are encrypted (AES-256-GCM) with the master key
+# from the TEX2WORD_SECRET_KEY env var (32 bytes, url-safe base64; generate with
+# `python -c "import secrets,base64;print(base64.urlsafe_b64encode(secrets.token_bytes(32)).decode())"`)
+# or, if unset, the key file at [security] secret_key_path (created on first use).
 
 [default]
 # Which provider the tex-copilot assistant uses by default (Sprint 04+).
@@ -53,6 +58,10 @@ rate_limit_enabled = true
 rate_limit_per_min = 240        # general /api requests per IP
 heavy_rate_limit_per_min = 60   # convert / assistant / chat / import per IP
 login_rate_limit_per_min = 10   # POST /api/auth/login per IP
+# Master key for API keys stored in the app (ignored when TEX2WORD_SECRET_KEY is
+# set). Created with mode 0600 on first use; back it up — without it, stored
+# keys can't be decrypted and must be re-entered.
+secret_key_path = "tex2word_secret.key"
 
 # --- Imported source bundles ------------------------------------------------
 # arXiv e-prints and uploaded .zip/.tar(.gz) archives. max_archive_mb caps both
@@ -78,6 +87,9 @@ nginx_config_filepath = "deploy/nginx.conf"
 # --- LLM provider definitions ------------------------------------------------
 # type = "openai" | "claude". The "openai" type works for any
 # OpenAI-compatible API (DeepSeek, Minimax, Kimi, vLLM, etc.).
+# `model` is the default model; `models = [...]` lists more for the picker.
+# `tools = false` keeps the assistant from sending tool definitions (for models
+# without function calling; the agent then answers as plain chat).
 
 [providers.openai]
 type = "openai"
@@ -96,6 +108,7 @@ type = "openai"
 api_base = "https://api.deepseek.com"
 api_key_env = "DEEPSEEK_API_KEY"
 model = "deepseek-chat"
+# models = ["deepseek-chat", "deepseek-flash", "deepseek-pro"]   # extra choices for the picker
 
 [providers.kimi]
 type = "openai"
