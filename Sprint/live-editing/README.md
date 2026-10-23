@@ -15,13 +15,14 @@ while typing.
 | [07](sprint-07-ux-polish.md) | File-type icons, file outline, line numbers + status bar, dark theme, narrow layout, shortcuts | done |
 | [08](sprint-08-assistant.md) | Assistant: in-app providers/models with encrypted keys, tool-using agent with reviewed edits, skills + prompts CRUD | done |
 | [09](sprint-09-sessions.md) | Assistant sessions: CRUD + search/pin/export, message versions and branches, split, remembered model/mode with switch warnings | done |
+| [10](sprint-10-references.md) | Reference manager (JabRef-like): References panel, entry editor, DOI/arXiv/ISBN + online search, checks, cleanup, keys, duplicates | done |
 
 ## How it is tested
 
 | Layer | Command | What it covers |
 | --- | --- | --- |
 | Python | `uv run pytest -q` | source map, instrumentation invisibility, quick ≡ full, API |
-| JS unit | `node --test tests/js/*.test.js` | `sync.js`, `complete.js`, `symbols.js`, `tablegen.js`, `tikzedit.js`, `icons.js`, `outline.js`, `markdown.js` (no browser needed) |
+| JS unit | `node --test tests/js/*.test.js` | `sync.js`, `complete.js`, `symbols.js`, `tablegen.js`, `tikzedit.js`, `icons.js`, `outline.js`, `markdown.js`, `bib.js` (no browser needed) |
 | End-to-end | `NODE_PATH=$(npm root -g) node tests/e2e/run.js` | the real UI in Chromium via Playwright |
 
 The e2e runner boots the app on a throwaway SQLite DB (`TEX2WORD_DB`) using

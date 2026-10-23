@@ -38,6 +38,9 @@ async function startServer() {
   const launcher = [
     "import uvicorn, app.main as m",
     "m.rate_limiter.enabled = False",
+    // reference-manager lookups answer from recorded replies (no network)
+    "from tests.e2e import fake_bib",
+    "m.bib_api.deps.fetcher.http = fake_bib.http",
     `uvicorn.run(m.app, host="127.0.0.1", port=${port}, log_level="warning")`,
   ].join("\n");
   const proc = spawn(py, ["-c", launcher], { cwd: ROOT, env, stdio: ["ignore", "inherit", "inherit"] });

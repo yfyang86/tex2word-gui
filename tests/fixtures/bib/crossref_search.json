@@ -1,0 +1,251 @@
+{
+ "status": "ok",
+ "message-type": "work-list",
+ "message-version": "1.0.0",
+ "message": {
+  "total-results": 3154854,
+  "items": [
+   {
+    "reference-count": 0,
+    "publisher": "IEEE",
+    "published-print": {
+     "date-parts": [
+      [
+       2015,
+       8
+      ]
+     ]
+    },
+    "DOI": "10.1109/hotchips.2015.7477328",
+    "type": "proceedings-article",
+    "page": "1-95",
+    "source": "Crossref",
+    "is-referenced-by-count": 48,
+    "title": [
+     "Deep learning &amp; convolutional networks"
+    ],
+    "prefix": "10.1109",
+    "author": [
+     {
+      "given": "Yann",
+      "family": "LeCun",
+      "sequence": "first",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "263",
+    "container-title": [
+     "2015 IEEE Hot Chips 27 Symposium (HCS)"
+    ],
+    "score": 27.468327,
+    "issued": {
+     "date-parts": [
+      [
+       2015,
+       8
+      ]
+     ]
+    },
+    "references-count": 0,
+    "URL": "https://doi.org/10.1109/hotchips.2015.7477328",
+    "published": {
+     "date-parts": [
+      [
+       2015,
+       8
+      ]
+     ]
+    }
+   },
+   {
+    "reference-count": 65,
+    "publisher": "IEEE",
+    "published-print": {
+     "date-parts": [
+      [
+       2019,
+       2
+      ]
+     ]
+    },
+    "DOI": "10.1109/isscc.2019.8662396",
+    "type": "proceedings-article",
+    "page": "12-19",
+    "source": "Crossref",
+    "is-referenced-by-count": 131,
+    "title": [
+     "1.1 Deep Learning Hardware: Past, Present, and Future"
+    ],
+    "prefix": "10.1109",
+    "author": [
+     {
+      "given": "Yann",
+      "family": "LeCun",
+      "sequence": "first",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "263",
+    "container-title": [
+     "2019 IEEE International Solid- State Circuits Conference - (ISSCC)"
+    ],
+    "score": 27.28405,
+    "issued": {
+     "date-parts": [
+      [
+       2019,
+       2
+      ]
+     ]
+    },
+    "references-count": 65,
+    "URL": "https://doi.org/10.1109/isscc.2019.8662396",
+    "published": {
+     "date-parts": [
+      [
+       2019,
+       2
+      ]
+     ]
+    }
+   },
+   {
+    "reference-count": 103,
+    "publisher": "Springer Science and Business Media LLC",
+    "issue": "7553",
+    "short-container-title": [
+     "Nature"
+    ],
+    "published-print": {
+     "date-parts": [
+      [
+       2015,
+       5,
+       28
+      ]
+     ]
+    },
+    "DOI": "10.1038/nature14539",
+    "type": "journal-article",
+    "page": "436-444",
+    "update-policy": "https://doi.org/10.1007/springer_crossmark_policy",
+    "source": "Crossref",
+    "is-referenced-by-count": 78636,
+    "title": [
+     "Deep learning"
+    ],
+    "prefix": "10.1038",
+    "volume": "521",
+    "author": [
+     {
+      "given": "Yann",
+      "family": "LeCun",
+      "sequence": "first",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Yoshua",
+      "family": "Bengio",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     },
+     {
+      "given": "Geoffrey",
+      "family": "Hinton",
+      "sequence": "additional",
+      "affiliation": [],
+      "role": [
+       {
+        "vocabulary": "crossref",
+        "role": "author"
+       }
+      ]
+     }
+    ],
+    "member": "297",
+    "published-online": {
+     "date-parts": [
+      [
+       2015,
+       5,
+       27
+      ]
+     ]
+    },
+    "container-title": [
+     "Nature"
+    ],
+    "language": "en",
+    "score": 26.459743,
+    "issued": {
+     "date-parts": [
+      [
+       2015,
+       5,
+       27
+      ]
+     ]
+    },
+    "references-count": 103,
+    "journal-issue": {
+     "issue": "7553",
+     "published-print": {
+      "date-parts": [
+       [
+        2015,
+        5,
+        28
+       ]
+      ]
+     }
+    },
+    "alternative-id": [
+     "BFnature14539"
+    ],
+    "URL": "https://doi.org/10.1038/nature14539",
+    "ISSN": [
+     "0028-0836",
+     "1476-4687"
+    ],
+    "published": {
+     "date-parts": [
+      [
+       2015,
+       5,
+       27
+      ]
+     ]
+    }
+   }
+  ],
+  "items-per-page": 3,
+  "query": {
+   "start-index": 0,
+   "search-terms": null
+  }
+ }
+}
