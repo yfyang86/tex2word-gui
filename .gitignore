@@ -5,6 +5,9 @@ config.toml
 .server.pid
 server.log
 
+# platform/macos/arm/build_dmg.sh tee output
+build.log
+
 # default SQLite project store (metasqlite_db); tests use a temp DB
 tex2word.db
 *.db
@@ -23,6 +26,8 @@ dist/
 
 # uv / venv
 .venv/
+# local dev lock; CI and Docker resolve from pyproject.toml (uv pip install)
+uv.lock
 
 # tooling caches
 .pytest_cache/
