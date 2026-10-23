@@ -1,0 +1,11 @@
+{"meta": {"count": 2, "per_page": 2}, "results": [
+ {"id": "https://openalex.org/W2626778328", "doi": "https://doi.org/10.48550/arxiv.1706.03762", "title": "Attention Is All You Need", "display_name": "Attention Is All You Need",
+  "publication_year": 2017, "type": "preprint",
+  "primary_location": {"landing_page_url": "https://arxiv.org/abs/1706.03762", "source": {"display_name": "arXiv (Cornell University)", "type": "repository"}},
+  "authorships": [{"author": {"display_name": "Ashish Vaswani"}}, {"author": {"display_name": "Noam Shazeer"}}],
+  "biblio": {"volume": null, "issue": null, "first_page": null, "last_page": null}},
+ {"id": "https://openalex.org/W1", "doi": "https://doi.org/10.1038/nature14539", "title": "Deep learning", "publication_year": 2015, "type": "article",
+  "primary_location": {"landing_page_url": "https://www.nature.com/articles/nature14539", "source": {"display_name": "Nature", "type": "journal"}},
+  "authorships": [{"author": {"display_name": "Yann LeCun"}}, {"author": {"display_name": "Yoshua Bengio"}}, {"author": {"display_name": "Geoffrey E. Hinton"}}],
+  "biblio": {"volume": "521", "issue": "7553", "first_page": "436", "last_page": "444"}}
+]}

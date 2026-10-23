@@ -1,0 +1,9 @@
+{"result": {"query": "attention is all you need", "status": {"@code": "200", "text": "OK"},
+ "hits": {"@total": "2", "@computed": "2", "@sent": "2", "@first": "0", "hit": [
+  {"@score": "10", "@id": "1", "info": {"authors": {"author": [{"@pid": "39/2452", "text": "Ashish Vaswani"}, {"@pid": "40/8484", "text": "Noam Shazeer"}, {"@pid": "1/1", "text": "Wei Wang 0001"}]},
+    "title": "Attention is All you Need.", "venue": "NIPS", "pages": "5998-6008", "year": "2017", "type": "Conference and Workshop Papers", "access": "open",
+    "key": "conf/nips/VaswaniSPUJGKP17", "ee": "https://proceedings.neurips.cc/paper/2017/hash/3f5ee243547dee91fbd053c1c4a845aa-Abstract.html", "url": "https://dblp.org/rec/conf/nips/VaswaniSPUJGKP17"}},
+  {"@score": "9", "@id": "2", "info": {"authors": {"author": {"@pid": "39/2452", "text": "Ashish Vaswani"}},
+    "title": "Attention Is All You Need.", "venue": "CoRR", "volume": "abs/1706.03762", "year": "2017", "type": "Informal and Other Publications", "access": "open",
+    "key": "journals/corr/VaswaniSPUJGKP17", "doi": "", "ee": "http://arxiv.org/abs/1706.03762", "url": "https://dblp.org/rec/journals/corr/VaswaniSPUJGKP17"}}
+ ]}}}

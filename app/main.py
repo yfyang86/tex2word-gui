@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from . import __version__, assistant, assistant_api, ingest, llm, service, sessions_api, skills, sourcemap, tikzeditor
+from . import __version__, assistant, assistant_api, bib_api, bibfetch, ingest, llm, service, sessions_api, skills, sourcemap, tikzeditor
 from .livepreview import PreviewEngine, PreviewError
 from .auth import AuthError, Authenticator
 from .chat import ChatError, ConversationStore
@@ -92,6 +92,9 @@ assistant_api.bind(registry=provider_registry, projects=projects, chats=chats, s
                    prompts=prompt_store, settings=app_settings, authn=authn, config=config)
 app.include_router(assistant_api.router)
 app.include_router(sessions_api.router)
+bib_api.bind(projects=projects, settings=app_settings, authn=authn,
+             fetcher=bibfetch.Fetcher(config.bibliography))
+app.include_router(bib_api.router)
 
 # /api paths reachable without a session when auth is on.
 _OPEN_PATHS = {"/api/health", "/api/config", "/api/auth/login"}
@@ -154,7 +157,8 @@ async def body_limit(request: Request, call_next):
 def _rate_bucket(path: str) -> str:
     if path == "/api/auth/login":
         return "login"
-    if any(s in path for s in ("/convert", "/assistant", "/message", "/agent", "/import/", "/test")):
+    if any(s in path for s in ("/convert", "/assistant", "/message", "/agent", "/import/", "/test",
+                               "/bib/lookup", "/bib/search", "/fetch")):
         return "heavy"
     return "gen"
 

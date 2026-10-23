@@ -150,6 +150,29 @@ class ImportConfig:
 
 
 @dataclass(slots=True)
+class BibliographyConfig:
+    """Online lookups for the reference manager (app/bibfetch.py).
+
+    ``online = false`` turns every lookup off; ``sources`` limits them. API keys
+    are optional and read from environment variables; ``contact_email`` joins
+    the "polite pool" of Crossref and OpenAlex.
+    """
+
+    online: bool = True
+    sources: list[str] = field(default_factory=lambda: [
+        "crossref", "arxiv", "dblp", "semanticscholar", "openalex", "openlibrary"])
+    timeout_s: float = 12.0
+    contact_email: str = ""
+    semanticscholar_api_key_env: str = "S2_API_KEY"
+    openalex_api_key_env: str = "OPENALEX_API_KEY"
+
+    def api_key(self, source: str) -> str:
+        env = {"semanticscholar": self.semanticscholar_api_key_env,
+               "openalex": self.openalex_api_key_env}.get(source)
+        return (os.environ.get(env) or "").strip() if env else ""
+
+
+@dataclass(slots=True)
 class LLMConfig:
     """LLM generation defaults applied when callers don't override."""
 
@@ -167,6 +190,7 @@ class Config:
     security: SecurityConfig = field(default_factory=SecurityConfig)
     llm: LLMConfig = field(default_factory=LLMConfig)
     imports: ImportConfig = field(default_factory=ImportConfig)
+    bibliography: BibliographyConfig = field(default_factory=BibliographyConfig)
     source_path: str | None = None
 
     def provider(self, name: str | None = None) -> Provider:
@@ -286,6 +310,16 @@ def _parse(data: dict[str, Any], source_path: str | None) -> Config:
     if imports.max_archive_mb < 1 or imports.max_archive_files < 1:
         raise ValueError("[import] max_archive_mb and max_archive_files must be >= 1")
 
+    bib = data.get("bibliography") or {}
+    bib_cfg = BibliographyConfig(
+        online=bool(bib.get("online", True)),
+        sources=[str(x) for x in bib.get("sources", BibliographyConfig().sources)],
+        timeout_s=float(bib.get("timeout_s", 12)),
+        contact_email=str(bib.get("contact_email", "")),
+        semanticscholar_api_key_env=str(bib.get("semanticscholar_api_key_env", "S2_API_KEY")),
+        openalex_api_key_env=str(bib.get("openalex_api_key_env", "OPENALEX_API_KEY")),
+    )
+
     llm_data = data.get("llm") or {}
     llm_cfg = LLMConfig(
         max_tokens=int(llm_data.get("max_tokens", 8192)),
@@ -302,6 +336,7 @@ def _parse(data: dict[str, Any], source_path: str | None) -> Config:
         security=security,
         llm=llm_cfg,
         imports=imports,
+        bibliography=bib_cfg,
         source_path=source_path,
     )
 

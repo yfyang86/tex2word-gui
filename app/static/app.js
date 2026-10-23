@@ -1175,6 +1175,7 @@ async function openProject(id) {
   renderStructure();
   renderFiles();
   openFile(p.files.some((f) => f.path === p.main_path) ? p.main_path : (p.files[0] && p.files[0].path));
+  document.dispatchEvent(new CustomEvent("tw:project", { detail: { id: p.id } }));
 }
 
 const PLUS_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none"><line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/></svg>';
@@ -1343,6 +1344,7 @@ async function saveActive(showFeedback) {
   await api("PUT", `/api/projects/${state.project.id}/files/${path}`, { content: state.contents[path] });
   setDirty(false);
   if (showFeedback) flash($("#btn-save"), "Saved");
+  document.dispatchEvent(new CustomEvent("tw:saved", { detail: { path } }));
 }
 
 // A .tex path for a .md file, deduped against existing files (-1, -2, …).

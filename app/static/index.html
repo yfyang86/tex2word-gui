@@ -131,6 +131,7 @@
         <button class="icon-btn" data-expand="files" title="Show files (Ctrl+B)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><polyline points="9 18 15 12 9 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <span class="rail-label" data-expand="files">Files</span>
         <button class="icon-btn rail-tool" data-tool="tablegen" title="Table generator"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" stroke-width="2"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16" stroke="currentColor" stroke-width="2"/></svg></button>
+        <button class="icon-btn rail-tool" data-tool="bibman" title="References (BibTeX manager)"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h5"/></svg></button>
         <button class="icon-btn rail-tool" data-tool="tikzedit" title="TikZ editor"><svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M5 18C8 5 15 19 19 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="5" cy="18" r="2.2" fill="currentColor"/><circle cx="19" cy="6" r="2.2" fill="currentColor"/></svg></button>
       </div>
       <div class="pane-head">
@@ -155,10 +156,30 @@
         </button>
         <div class="outline-tree" id="outline-tree" role="tree" aria-label="File outline"></div>
       </section>
+      <section class="pane-refs closed" id="pane-refs">
+        <button class="outline-head" id="refs-toggle" aria-expanded="false" aria-controls="refs-body" title="The project's BibTeX references: search, cite, manage">
+          <svg class="chev" width="12" height="12" viewBox="0 0 24 24" fill="none"><polyline points="9 6 15 12 9 18" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          <span class="eyebrow">References</span>
+          <span class="outline-file" id="refs-file"></span>
+          <span class="refs-warn" id="refs-warn" hidden></span>
+          <span class="fcount" id="refs-count"></span>
+        </button>
+        <div class="refs-body" id="refs-body">
+          <div class="refs-tools">
+            <input type="search" id="refs-search" placeholder="Filter references…" aria-label="Filter references" autocomplete="off" spellcheck="false">
+            <button class="icon-btn" id="refs-add" title="Add a reference (DOI, arXiv, ISBN, search, paste)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none"><line x1="12" y1="5" x2="12" y2="19" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><line x1="5" y1="12" x2="19" y2="12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+            <button class="icon-btn" id="refs-open" title="Open the reference manager"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6M10 14 21 3M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg></button>
+          </div>
+          <div class="refs-list" id="refs-list" role="listbox" aria-label="References — click to cite"></div>
+        </div>
+      </section>
       <div class="pane-tools">
         <div class="eyebrow">Tools</div>
         <button class="tool-row" data-tool="tablegen" title="Build a LaTeX table visually, or edit the table at the cursor">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><rect x="3" y="4" width="18" height="16" rx="2" stroke="currentColor" stroke-width="2"/><path d="M3 10h18M3 15h18M9 4v16M15 4v16" stroke="currentColor" stroke-width="2"/></svg><span>Table generator</span>
+        </button>
+        <button class="tool-row" data-tool="bibman" title="Manage the BibTeX references: add by DOI / arXiv / ISBN, search online, check, clean up">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h5"/></svg><span>References</span>
         </button>
         <button class="tool-row" data-tool="tikzedit" title="Draw a TikZ figure visually, or edit the tikzpicture at the cursor">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none"><path d="M5 18C8 5 15 19 19 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="5" cy="18" r="2.2" fill="currentColor"/><circle cx="19" cy="6" r="2.2" fill="currentColor"/></svg><span>TikZ editor</span>
@@ -446,6 +467,47 @@
   </div>
 
   <!-- ── table generator (app/static/tablegen-ui.js) ── -->
+  <!-- ── reference manager (app/static/bib-ui.js) ── -->
+  <div id="bib-modal" class="modal bib-modal" hidden>
+    <div class="bib-card" role="dialog" aria-labelledby="bib-title">
+      <div class="bib-top">
+        <span class="bib-title" id="bib-title"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/><path d="M9 7h7M9 11h5"/></svg> References</span>
+        <select id="bib-file" class="bib-file" aria-label="Bibliography file"></select>
+        <input type="search" id="bib-search" class="bib-search" placeholder="Search key, author, title, year, venue…" aria-label="Search references" autocomplete="off" spellcheck="false">
+        <div class="seg-toggle bib-filter" id="bib-filter" role="group" aria-label="Show">
+          <button data-filter="all" class="active">All</button>
+          <button data-filter="cited">Cited</button>
+          <button data-filter="unused">Not cited</button>
+          <button data-filter="problems">Problems</button>
+          <button data-filter="missing">Missing</button>
+        </div>
+        <div class="spacer"></div>
+        <button class="icon-btn" id="bib-close" title="Close (Esc)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none"><line x1="18" y1="6" x2="6" y2="18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><line x1="6" y1="6" x2="18" y2="18" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg></button>
+      </div>
+      <div class="bib-toolbar" id="bib-toolbar">
+        <button class="btn-small btn-primary" data-bib="new">+ New entry</button>
+        <button class="btn-small btn-secondary" data-bib="identifier" title="DOI, arXiv id, ISBN or a link">Add by ID</button>
+        <button class="btn-small btn-secondary" data-bib="search" title="arXiv, Crossref, DBLP, Semantic Scholar, OpenAlex — and a Google Scholar link">Search online</button>
+        <button class="btn-small btn-secondary" data-bib="paste" title="Paste BibTeX, e.g. from Google Scholar's Cite → BibTeX">Paste BibTeX</button>
+        <span class="bib-sep"></span>
+        <button class="btn-small btn-secondary" data-bib="cleanup">Clean up…</button>
+        <button class="btn-small btn-secondary" data-bib="keys">Generate keys…</button>
+        <button class="btn-small btn-secondary" data-bib="duplicates" id="bib-dup-btn">Duplicates</button>
+        <div class="spacer"></div>
+        <button class="btn-small btn-secondary" data-bib="prefs" title="Key pattern, cite command, search sources">Settings</button>
+      </div>
+      <div class="bib-banner" id="bib-banner" hidden></div>
+      <div class="bib-main">
+        <div class="bib-tablewrap" id="bib-tablewrap" tabindex="0" aria-label="Entries">
+          <table class="bib-table" id="bib-table"></table>
+          <div class="bib-empty" id="bib-empty" hidden></div>
+        </div>
+        <div class="bib-side" id="bib-side"></div>
+      </div>
+      <div class="bib-status" id="bib-status"></div>
+    </div>
+  </div>
+
   <div id="tg-modal" class="modal tg-modal" hidden>
     <div class="tg-card" role="dialog" aria-label="Table generator">
       <div class="tg-top">
@@ -559,10 +621,12 @@
   <script src="/static/complete.js"></script>
   <script src="/static/tablegen.js"></script>
   <script src="/static/tikzedit.js"></script>
+  <script src="/static/bib.js"></script>
   <script src="/static/app.js"></script>
   <script src="/static/tablegen-ui.js"></script>
   <script src="/static/tikzedit-ui.js"></script>
   <script src="/static/ux.js"></script>
   <script src="/static/assistant-ui.js"></script>
+  <script src="/static/bib-ui.js"></script>
 </body>
 </html>

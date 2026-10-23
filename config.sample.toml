@@ -71,6 +71,20 @@ secret_key_path = "tex2word_secret.key"
 max_archive_mb = 100
 max_archive_files = 500
 
+# --- Reference manager: online lookups (Sprint 10) -----------------------------
+# Left panel → References looks up DOIs (Crossref, doi.org), arXiv ids (arXiv
+# API) and ISBNs (Open Library), and searches arXiv, Crossref, DBLP, Semantic
+# Scholar and OpenAlex. Requests go from the server, only when a user looks
+# something up. Google Scholar has no API: it is offered as a link (paste its
+# Cite → BibTeX output).
+[bibliography]
+online = true
+sources = ["crossref", "arxiv", "dblp", "semanticscholar", "openalex", "openlibrary"]
+timeout_s = 12
+contact_email = ""                      # joins Crossref/OpenAlex's "polite pool"
+semanticscholar_api_key_env = "S2_API_KEY"   # optional; anonymous use is rate-limited
+openalex_api_key_env = "OPENALEX_API_KEY"    # optional
+
 # --- LLM generation defaults ------------------------------------------------
 [llm]
 max_tokens = 8192               # default max tokens for completions

@@ -1,0 +1,9 @@
+{"total": 2, "offset": 0, "next": 2, "data": [
+ {"paperId": "204e3073870fae3d05bcbc2f6a8e263d9b72e776", "externalIds": {"DBLP": "conf/nips/VaswaniSPUJGKP17", "ArXiv": "1706.03762", "MAG": "2963403868", "CorpusId": 13756489},
+  "url": "https://www.semanticscholar.org/paper/204e3073870fae3d05bcbc2f6a8e263d9b72e776", "title": "Attention is All you Need", "venue": "Neural Information Processing Systems", "year": 2017,
+  "publicationTypes": ["JournalArticle", "Conference"], "journal": {"pages": "5998-6008", "name": "", "volume": ""},
+  "authors": [{"authorId": "40348417", "name": "Ashish Vaswani"}, {"authorId": "1846258", "name": "Noam M. Shazeer"}]},
+ {"paperId": "abc", "externalIds": {"DOI": "10.1109/ICASSP39728.2021.9413901", "CorpusId": 1}, "url": "https://www.semanticscholar.org/paper/abc",
+  "title": "Attention Is All You Need In Speech Separation", "venue": "ICASSP", "year": 2020, "publicationTypes": ["Conference"],
+  "journal": {"name": "ICASSP 2021", "pages": "21-25"}, "authors": [{"authorId": "1", "name": "Cem Subakan"}]}
+]}

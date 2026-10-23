@@ -105,6 +105,16 @@ essential module; the web app is a thin adapter around its IR and outputs.
   with `{file}` / `{selection}` / `{input}` placeholders; built-ins can be
   duplicated) and saved prompts, plus standing instructions and the agent's step
   limit. With `[auth]` on, this configuration is admin-only.
+- **Reference manager** (JabRef-like, left panel → References) — search and
+  **click to cite** (or add to the `\cite{…}` at the caret); flags cited keys
+  with no entry. The manager edits entries with required/optional fields per
+  type (or the raw BibTeX), **adds by DOI / arXiv id / ISBN**, **searches
+  online** (arXiv, Crossref, DBLP, Semantic Scholar, OpenAlex; Google Scholar as
+  a link + paste its BibTeX), checks integrity, cleans up (page dashes, DOI,
+  months, arXiv fields, acronyms), regenerates **citation keys** from patterns
+  like `[auth][year]` (renames follow into `\cite`), and merges **duplicates**.
+  Edits rewrite only the entry they touch; online lookups are optional
+  (`[bibliography]` in config.toml).
 - **Import** from **Markdown** (→ LaTeX → Word), an **arXiv** source bundle, or
   an uploaded **`.zip`/`.tar(.gz)`** archive of a LaTeX project.
 - **Coverage dashboard** — aggregate tex2word metrics (math OMML coverage,
@@ -244,6 +254,14 @@ from `[auth]`.
 | `POST` | `/api/conversations/{cid}/switch-check` | `{provider?, model?, mode?}` | `{same, from, to, tokens, warnings[]}` for a model change |
 | `POST` | `/api/conversations/{cid}/message[/stream]` | `{content, source?, skill?, provider?, context?}` | reply (JSON or SSE), persisted |
 | `GET`/`PUT` | `/api/projects/{id}/memory` | — / `{memory}` | per-project assistant memory |
+| `GET`  | `/api/projects/{id}/bib?file=` | — | entries (display, links, problems, cited), files, missing / unused keys, duplicates |
+| `POST`/`PUT`/`DELETE` | `/api/projects/{id}/bib/entries[/{key}]` | `{file, type, key?, fields, force?, rename_citations?}` | create / edit (key renames follow `\cite`) / delete an entry |
+| `PUT`  | `/api/projects/{id}/bib/entries/{key}/source` | `{file, source}` | replace an entry with raw BibTeX |
+| `POST` | `/api/projects/{id}/bib/import` | `{file, text? \| candidates?}` | add pasted BibTeX or online results (duplicates skipped) |
+| `POST` | `/api/projects/{id}/bib/{cleanup,keys,merge}` | see `app/bib_api.py` | cleanup actions, key regeneration (`dry_run`), merge duplicates |
+| `GET`  | `/api/projects/{id}/bib/entries/{key}/fetch` | — | field-by-field diff with the online record |
+| `GET`  | `/api/bib/lookup?q=` · `/api/bib/search?q=&source=` | — | DOI / arXiv / ISBN lookup · online search (+ Google Scholar link) |
+| `GET`/`PUT` | `/api/bib/sources` · `/api/bib/prefs` | — / `{key_pattern?, cite_command?, search_sources?}` | sources, types, cleanups · manager settings |
 | `GET`  | `/api/coverage` | — | `{aggregate, rows}` metrics across all projects |
 | `GET`  | `/api/coverage.html` | — | tex2word's native coverage dashboard (HTML) |
 | `GET`  | `/api/artifacts/{id}` | — | the `.docx` (attachment) |
@@ -340,6 +358,9 @@ app/
   providers.py   provider registry (config + in-app overrides, presets)
   secretbox.py   AES-256-GCM encryption for stored API keys
   prompts.py     saved prompts store
+  bibtex.py      BibTeX parse / in-place edit, keys, checks, cleanup, duplicates
+  bibfetch.py    online lookups (Crossref, doi.org, arXiv, DBLP, Semantic Scholar, OpenAlex, Open Library)
+  bib_api.py     reference manager routes
   ingest.py      Markdown → LaTeX (mistune) + arXiv fetch/unpack
   auth.py        scrypt passwords + RSA-signed (RS256) JWT sessions
   security.py    per-IP rate limiter (body-size cap + authz live in main.py)
@@ -355,7 +376,8 @@ app/
                  icons.js (file types) + outline.js (file outline) engines,
                  ux.js the editor gutter/status bar/outline/theme/shortcuts,
                  theme.js the early theme switch,
-                 markdown.js (safe Markdown) + assistant-ui.js the assistant
+                 markdown.js (safe Markdown) + assistant-ui.js the assistant,
+                 bib.js (engine) + bib-ui.js the reference manager
   static/vendor/tikz-editor/  built TikZ editor bundle (not committed)
   tikzeditor.py  TikZ editor bundle detection + the CSP its pages get
 tests/           pytest suite (one file per area) + conftest
