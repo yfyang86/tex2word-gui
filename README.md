@@ -363,7 +363,8 @@ tests/           pytest suite (one file per area) + conftest
   e2e/           Playwright end-to-end specs + runner (boots the app on a temp DB)
 manage.py        admin / DB management CLI (users, keys, db-info)
 scripts/build_symbols.py  regenerate app/static/symbols.svg from symbols.js
-scripts/build_favicon.py  regenerate app/static/favicon.ico (the brand mark)
+scripts/build_logo.py  regenerate every logo artifact (favicons, PNGs, .icns)
+                        from the master icon.svg at the repo root
 scripts/build_tikz_editor.sh  build the embedded TikZ editor (pinned upstream commit)
 tools/tikz-editor-embed/  embed shell + host bridge + patches for that build
 config.sample.toml  configuration template (copy to config.toml)
